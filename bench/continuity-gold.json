@@ -1,0 +1,198 @@
+{
+  "_meta": {
+    "schema": "Per-task: must_inherit (facts S2 must respect from S1), reset_questions (regex patterns indicating S2 is asking for state it should already have), forbidden_drift (alternative choices that contradict S1).",
+    "scoring": "must_inherit hits are good. reset_question matches are bad. forbidden_drift matches are bad."
+  },
+  "tasks": {
+    "strava-project": {
+      "must_inherit": [
+        {
+          "name": "uses_uv",
+          "keywords": ["uv add", "uv run", "uv pip", "uv sync"],
+          "desc": "uses uv, not pip or poetry"
+        },
+        { "name": "uses_pytest", "keywords": ["pytest", "test_", "tests/"] },
+        { "name": "uses_ruff", "keywords": ["ruff"] },
+        {
+          "name": "correct_path",
+          "keywords": ["E:/projects/strava-analyzer", "E:\\projects\\strava-analyzer", "strava-analyzer/"]
+        },
+        { "name": "src_layout", "keywords": ["src/strava_analyzer", "src/strava_analyzer/"] },
+        { "name": "python_312", "keywords": ["3.12", "Python 3.12", "python_version = \"3.12\""] }
+      ],
+      "reset_questions": [
+        {
+          "name": "asks_path",
+          "patterns": ["what.*path", "where.*project", "which directory", "project location"]
+        },
+        {
+          "name": "asks_tooling",
+          "patterns": [
+            "which.*tool",
+            "uv or pip",
+            "pip or uv",
+            "pytest or unittest",
+            "ruff or black",
+            "what package manager"
+          ]
+        },
+        { "name": "asks_layout", "patterns": ["src layout or flat", "which layout", "src/ or no"] }
+      ],
+      "forbidden_drift": [
+        {
+          "name": "uses_pip",
+          "keywords": ["pip install", "requirements.txt"],
+          "desc": "S1 chose uv; pip is drift"
+        },
+        { "name": "uses_poetry", "keywords": ["poetry add", "poetry install"] },
+        { "name": "uses_black", "keywords": ["black ."], "desc": "S1 chose ruff" },
+        { "name": "uses_unittest", "keywords": ["import unittest", "TestCase"] }
+      ]
+    },
+    "fashion-shoot-prompts": {
+      "must_inherit": [
+        { "name": "uses_juggernaut", "keywords": ["Juggernaut"] },
+        { "name": "uses_dpm_karras", "keywords": ["DPM++ 2M Karras", "DPM++ 2M", "Karras"] },
+        { "name": "uses_30_steps", "keywords": ["30 steps", "steps: 30", "steps=30"] },
+        { "name": "uses_cfg_65", "keywords": ["CFG 6.5", "CFG: 6.5", "cfg=6.5"] },
+        { "name": "uses_resolution", "keywords": ["1344x768", "1344 x 768"] },
+        { "name": "aesthetic_tokyo", "keywords": ["Tokyo"] },
+        { "name": "aesthetic_neon", "keywords": ["neon"] }
+      ],
+      "reset_questions": [
+        { "name": "asks_sampler", "patterns": ["which sampler", "what sampler"] },
+        { "name": "asks_checkpoint", "patterns": ["which.*checkpoint", "which.*model", "SDXL or"] },
+        { "name": "asks_aesthetic", "patterns": ["what.*aesthetic", "what.*style", "what.*vibe"] },
+        { "name": "asks_resolution", "patterns": ["which resolution", "what resolution", "what.*size"] }
+      ],
+      "forbidden_drift": [
+        {
+          "name": "different_sampler",
+          "keywords": ["Euler a", "DDIM", "UniPC"],
+          "desc": "S1 chose DPM++ 2M Karras"
+        },
+        { "name": "different_checkpoint", "keywords": ["DreamShaper", "RealVis", "SD 1.5"] }
+      ]
+    },
+    "slack-release-thread": {
+      "must_inherit": [
+        { "name": "version_referenced", "keywords": ["v0.3.1", "0.3.1"] },
+        { "name": "uses_rocket_emoji", "keywords": [":rocket:"] },
+        {
+          "name": "casual_technical_tone",
+          "keywords": ["folks", "team", "—", "shipped", "rolled out", "going out"]
+        },
+        { "name": "migration_topic", "keywords": ["migration", "migrate", "userData", "auto-migration"] }
+      ],
+      "reset_questions": [
+        { "name": "asks_version", "patterns": ["which version", "what version", "which release"] },
+        { "name": "asks_audience", "patterns": ["who is.*audience", "what channel", "which channel"] },
+        { "name": "asks_tone", "patterns": ["what tone", "how formal"] }
+      ],
+      "forbidden_drift": [
+        { "name": "wrong_emoji", "keywords": [":tada:", ":sparkles:", ":fire:"], "desc": "S1 used :rocket:" },
+        { "name": "marketing_tone", "keywords": ["world-class", "leverage synergies", "best-in-class"] }
+      ]
+    },
+    "brand-poster-adapt": {
+      "must_inherit": [
+        { "name": "accent_color", "keywords": ["#CC785C", "Book Cloth", "Clay"] },
+        { "name": "background_color", "keywords": ["#F0EEE6", "Ivory"] },
+        { "name": "text_color", "keywords": ["#191919", "Slate Dark"] },
+        { "name": "display_type", "keywords": ["Styrene A", "Styrene"] },
+        { "name": "body_type", "keywords": ["Tiempos"] },
+        { "name": "asterisk_motif", "keywords": ["asterisk", "asterisk glyph"] },
+        { "name": "headline_kept", "keywords": ["BUILDING WITH CLAUDE", "Building with Claude"] }
+      ],
+      "reset_questions": [
+        { "name": "asks_palette", "patterns": ["which colors", "what palette", "color scheme"] },
+        { "name": "asks_typography", "patterns": ["which font", "what typography", "which typeface"] },
+        { "name": "asks_motif", "patterns": ["what graphic", "what motif", "any imagery"] }
+      ],
+      "forbidden_drift": [
+        { "name": "different_palette", "keywords": ["#FF6B35", "neon", "vibrant gradient", "rainbow"] },
+        { "name": "different_typography", "keywords": ["Inter", "Roboto", "Helvetica", "Arial"] }
+      ]
+    },
+    "memory-consolidation": {
+      "must_inherit": [
+        {
+          "name": "five_clusters",
+          "keywords": ["5 clusters", "five clusters", "cluster A", "cluster B", "cluster C"]
+        },
+        {
+          "name": "merge_targets",
+          "keywords": [
+            "cluster_A_windows",
+            "cluster A",
+            "Windows duplicates",
+            "cluster_B_x100vi",
+            "cluster B",
+            "X100VI"
+          ]
+        },
+        {
+          "name": "keep_with_stale_tag",
+          "keywords": ["cluster_D", "cluster D", "cluster_E", "cluster E", "stale tag", "tag as stale"]
+        },
+        { "name": "backup_required", "keywords": ["backup", "snapshot", "save copy", "before mutating"] },
+        { "name": "audit_log_path", "keywords": ["data/memory-audits", "memory-audits/2026-05-15.json"] }
+      ],
+      "reset_questions": [
+        {
+          "name": "asks_what_clusters",
+          "patterns": ["which.*clusters", "what duplicates", "what was found"]
+        },
+        {
+          "name": "asks_decisions",
+          "patterns": ["which.*merge", "what should I merge", "what should be kept"]
+        },
+        { "name": "asks_safety", "patterns": ["should I backup", "do you want a backup"] }
+      ],
+      "forbidden_drift": [
+        { "name": "no_backup", "keywords": ["overwrites memory.json directly", "no backup needed"] },
+        { "name": "merges_wrong", "keywords": ["merge cluster D", "merge cluster E"] }
+      ]
+    },
+    "comfy-workflow-iteration": {
+      "must_inherit": [
+        { "name": "uses_ultrasharp", "keywords": ["4x-UltraSharp", "UltraSharp"] },
+        { "name": "refiner_denoise", "keywords": ["denoise 0.35", "denoise: 0.35", "denoise=0.35"] },
+        { "name": "tile_size", "keywords": ["1024 tile", "tile size 1024", "tile_size: 1024"] },
+        { "name": "output_4k", "keywords": ["3840x2160", "3840 x 2160", "4K"] },
+        { "name": "refiner_checkpoint", "keywords": ["Juggernaut XL", "Juggernaut"] },
+        {
+          "name": "workflow_path",
+          "keywords": ["E:/comfyui-workflows/product-upscale-4k.json", "product-upscale-4k.json"]
+        }
+      ],
+      "reset_questions": [
+        { "name": "asks_upscaler", "patterns": ["which upscaler", "what upscaler model"] },
+        { "name": "asks_denoise", "patterns": ["what denoise", "which denoise"] },
+        { "name": "asks_resolution", "patterns": ["what resolution", "what output size"] }
+      ],
+      "forbidden_drift": [
+        { "name": "different_upscaler", "keywords": ["RealESRGAN", "SwinIR", "LDSR"] },
+        { "name": "different_denoise", "keywords": ["denoise 0.5", "denoise 0.4", "denoise 0.2"] }
+      ]
+    },
+    "email-followup-thread": {
+      "must_inherit": [
+        { "name": "patch_version", "keywords": ["v0.3.1", "0.3.1"] },
+        { "name": "vulnerability_name", "keywords": ["symlink", "symlink-escape"] },
+        { "name": "severity", "keywords": ["moderate"] },
+        { "name": "audience", "keywords": ["eng-all", "engineering", "the team"] },
+        { "name": "tone_calm", "keywords": ["update", "updated", "thanks", "appreciated", "no exploit"] }
+      ],
+      "reset_questions": [
+        { "name": "asks_version", "patterns": ["which version", "which patch"] },
+        { "name": "asks_vuln", "patterns": ["what vulnerability", "what was the bug"] },
+        { "name": "asks_audience", "patterns": ["who is.*audience", "who should this go to"] }
+      ],
+      "forbidden_drift": [
+        { "name": "panic_tone", "keywords": ["URGENT", "EMERGENCY", "DISASTER"] },
+        { "name": "different_severity", "keywords": ["critical severity", "low severity"] }
+      ]
+    }
+  }
+}

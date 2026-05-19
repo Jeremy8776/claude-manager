@@ -20,9 +20,9 @@ function validateMemory(data) {
 function validateRules(data) {
   if (!data || typeof data !== 'object') return { valid: false, error: 'Must be a JSON object' };
   if (data._parseError) return { valid: false, error: 'Invalid JSON in request body' };
-  const codingPriorities = ['hard', 'soft'];
-  const generalPriorities = ['hard', 'soft'];
-  const soulPriorities = ['soft'];
+  const codingPriorities = ['hard', 'soft', 'style'];
+  const generalPriorities = ['hard', 'soft', 'style'];
+  const soulPriorities = ['soft', 'style'];
   const sections = [
     { key: 'coding', allowed: codingPriorities },
     { key: 'general', allowed: generalPriorities },

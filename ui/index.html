@@ -27,36 +27,6 @@
       <div class="loading-text">Loading Context Engine</div>
     </div>
     <div class="app">
-      <div class="desktop-titlebar" role="banner" aria-label="Context Engine window controls">
-        <div class="desktop-titlebar-brand" aria-hidden="true"></div>
-        <div class="desktop-titlebar-actions">
-          <button
-            type="button"
-            title="Minimize"
-            aria-label="Minimize"
-            onclick="window.contextEngineDesktop?.minimize()"
-          >
-            <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
-          </button>
-          <button
-            type="button"
-            title="Maximize"
-            aria-label="Maximize"
-            onclick="window.contextEngineDesktop?.maximize()"
-          >
-            <svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z" /></svg>
-          </button>
-          <button
-            class="desktop-titlebar-close"
-            type="button"
-            title="Close"
-            aria-label="Close"
-            onclick="window.contextEngineDesktop?.close()"
-          >
-            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
-        </div>
-      </div>
       <nav class="nav">
         <div class="nav-inner">
           <div class="nav-brand">
@@ -806,6 +776,8 @@
     <script src="skill-sources-panel.js"></script>
     <script src="context-flow.js"></script>
     <script src="command-bar.js"></script>
+    <script src="icons.js"></script>
+    <script src="onboarding-populate.js"></script>
     <script src="onboarding.js"></script>
     <script src="app.js"></script>
   </body>

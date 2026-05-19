@@ -272,6 +272,24 @@ async function handleRequest(req, res, url) {
     return json(res, { ok: true, ...getAppVersion() });
   }
 
+  // ---- SYSTEM SCAN ----
+  if (p === '/api/system/scan') {
+    const { scanSystem } = require('./lib/system-scan');
+    if (req.method === 'POST') {
+      const data = await body(req);
+      const customPaths = Array.isArray(data?.customPaths) ? data.customPaths : [];
+      const opts = {
+        skipDrives: !!data?.skipDrives,
+        skipHomedir: !!data?.skipHomedir,
+        skipWorkspaces: !!data?.skipWorkspaces,
+      };
+      return json(res, { ok: true, ...scanSystem(customPaths, opts) });
+    }
+    if (req.method === 'GET') {
+      return json(res, { ok: true, ...scanSystem() });
+    }
+  }
+
   // ---- ONBOARDING ----
   if (p === '/api/onboarding' && req.method === 'GET') {
     const tools = detectTools(HOMEDIR, {

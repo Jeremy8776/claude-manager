@@ -358,9 +358,9 @@ const MS = {
 // ---- RULES ----
 /** @type {Object<string, string[]>} */
 const PRIORITY_SECTIONS = {
-  coding: ['hard', 'soft'],
-  general: ['hard', 'soft'],
-  soul: ['soft'],
+  coding: ['hard', 'soft', 'style'],
+  general: ['hard', 'soft', 'style'],
+  soul: ['soft', 'style'],
 };
 
 /** Migrate legacy flat-string rules to new priority-object format
@@ -386,11 +386,7 @@ function migrateRules(rules) {
             result[key][p] = soft;
           } else {
             const pref = typeof section.preference === 'string' ? section.preference : '';
-            const style = typeof section.style === 'string' ? section.style : '';
-            const parts = [];
-            if (pref) parts.push('## Preference\n' + pref);
-            if (style) parts.push('## Style\n' + style);
-            result[key][p] = parts.join('\n\n');
+            result[key][p] = pref || section.soft || '';
           }
         } else {
           result[key][p] = typeof section[p] === 'string' ? section[p] : '';

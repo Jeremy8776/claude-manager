@@ -10,6 +10,7 @@ const {
   upsertVectors,
   replaceVectors,
   searchVectors,
+  hybridSearch,
   cosineSimilarity,
   markIndexStale,
   clearIndexStale,
@@ -108,6 +109,50 @@ try {
 
   const emptyResults = searchVectors(loadVectorStore(path.join(tmpDir, 'nonexistent.json')), [1, 0]);
   assert.deepStrictEqual(emptyResults, [], 'search on empty store returns empty');
+
+  // ---- hybridSearch result diversity ----
+
+  const duplicateStore = replaceVectors(
+    [
+      {
+        id: 'source-a:launcher:overview:1',
+        skillId: 'source-a:launcher',
+        section: 'Overview',
+        text: 'Launch apps in a repeatable morning routine.',
+        type: 'knowledge',
+        sourcePath: 'source-a/launcher/SKILL.md',
+        vector: [1, 0],
+      },
+      {
+        id: 'source-b:launcher:overview:1',
+        skillId: 'source-b:launcher',
+        section: 'Overview',
+        text: 'Launch apps for startup automation.',
+        type: 'knowledge',
+        sourcePath: 'source-b/launcher/SKILL.md',
+        vector: [0.99, 0],
+      },
+      {
+        id: 'calendar-helper:overview:1',
+        skillId: 'calendar-helper',
+        section: 'Overview',
+        text: 'Prepare a morning calendar checklist.',
+        type: 'knowledge',
+        sourcePath: 'calendar-helper/SKILL.md',
+        vector: [0.8, 0],
+      },
+    ],
+    'fixture-model',
+  );
+  const diverseResults = hybridSearch(duplicateStore, [1, 0], 'morning launch apps', {
+    limit: 2,
+    diversifyBySkill: true,
+  });
+  assert.deepStrictEqual(
+    diverseResults.map((r) => r.skillId),
+    ['source-a:launcher', 'calendar-helper'],
+    'hybridSearch can diversify linked copies by bare skill ID',
+  );
 
   // ---- cosineSimilarity edge cases ----
 

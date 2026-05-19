@@ -123,7 +123,7 @@ function replaceVectors(records, model) {
 }
 
 /**
- * @param {VectorStore} store
+ * @param {import('./vectorstore').VectorStore} store
  * @param {number[]} queryVector
  * @param {{ limit?: number, skillId?: string }=} options
  */
@@ -134,6 +134,265 @@ function searchVectors(store, queryVector, options = {}) {
     .map((record) => ({ ...record, score: cosineSimilarity(queryVector, record.vector) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+/**
+ * Hybrid search: combine vector cosine score with lexical term matching.
+ * Lexical boosts chunks where the query terms appear in the skill ID (weight
+ * 0.4), section title (weight 0.3), or chunk text (weight 0.3). The final
+ * score is 0.6 * vectorScore + 0.4 * lexicalScore.
+ *
+ * @param {import('./vectorstore').VectorStore} store
+ * @param {number[]} queryVector
+ * @param {string} query  Original query text for lexical matching.
+ * @param {{ limit?: number, diversifyBySkill?: boolean }=} options
+ * @returns {Array<import('./vectorstore').VectorRecord & { score: number, lexicalScore: number }>}
+ */
+function hybridSearch(store, queryVector, query, options = {}) {
+  const limit = options.limit || 10;
+  const terms = extractQueryTerms(query);
+  if (!terms.length) {
+    const vectorResults = searchVectors(store, queryVector, {
+      limit: options.diversifyBySkill ? Infinity : limit,
+    }).map((/** @type {import('./vectorstore').VectorRecord & { score: number }} */ r) => ({
+      ...r,
+      lexicalScore: 0,
+    }));
+    return limitSearchResults(vectorResults, limit, options);
+  }
+
+  const results = normalizeStore(store)
+    .records.map((record) => {
+      const vectorScore = cosineSimilarity(queryVector, record.vector);
+      const lexicalScore = computeLexicalScore(record, terms);
+      return {
+        ...record,
+        score: 0.6 * vectorScore + 0.4 * lexicalScore,
+        lexicalScore,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+  return limitSearchResults(results, limit, options);
+}
+
+/**
+ * @param {Array<import('./vectorstore').VectorRecord & { score: number, lexicalScore: number }>} results
+ * @param {number} limit
+ * @param {{ diversifyBySkill?: boolean }} options
+ * @returns {Array<import('./vectorstore').VectorRecord & { score: number, lexicalScore: number }>}
+ */
+function limitSearchResults(results, limit, options) {
+  if (!options.diversifyBySkill) return results.slice(0, limit);
+
+  const picked = [];
+  const deferred = [];
+  const seenSkills = new Set();
+  for (const result of results) {
+    const skillGroup = bareSkillId(result.skillId);
+    if (!seenSkills.has(skillGroup)) {
+      picked.push(result);
+      seenSkills.add(skillGroup);
+    } else {
+      deferred.push(result);
+    }
+    if (picked.length >= limit) return picked;
+  }
+
+  for (const result of deferred) {
+    if (picked.length >= limit) break;
+    picked.push(result);
+  }
+  return picked;
+}
+
+/**
+ * Source-linked skills use `<sourceId>:<skillId>`. For search result diversity,
+ * group linked copies and built-in copies by their bare skill ID.
+ * @param {string} skillId
+ */
+function bareSkillId(skillId) {
+  return (
+    String(skillId || '')
+      .split(':')
+      .pop() || String(skillId || '')
+  );
+}
+
+/**
+ * Extract meaningful lowercase terms from a query string.
+ * Removes common stopwords and short tokens.
+ * @param {string} query
+ * @returns {string[]}
+ */
+function extractQueryTerms(query) {
+  const stopwords = new Set([
+    'the',
+    'a',
+    'an',
+    'is',
+    'are',
+    'was',
+    'were',
+    'be',
+    'been',
+    'being',
+    'have',
+    'has',
+    'had',
+    'do',
+    'does',
+    'did',
+    'will',
+    'would',
+    'could',
+    'should',
+    'may',
+    'might',
+    'shall',
+    'can',
+    'need',
+    'dare',
+    'ought',
+    'used',
+    'to',
+    'of',
+    'in',
+    'for',
+    'on',
+    'with',
+    'at',
+    'by',
+    'from',
+    'as',
+    'into',
+    'through',
+    'during',
+    'before',
+    'after',
+    'above',
+    'below',
+    'between',
+    'out',
+    'off',
+    'over',
+    'under',
+    'again',
+    'further',
+    'then',
+    'once',
+    'here',
+    'there',
+    'when',
+    'where',
+    'why',
+    'how',
+    'all',
+    'each',
+    'every',
+    'both',
+    'few',
+    'more',
+    'most',
+    'other',
+    'some',
+    'such',
+    'no',
+    'nor',
+    'not',
+    'only',
+    'own',
+    'same',
+    'so',
+    'than',
+    'too',
+    'very',
+    'just',
+    'because',
+    'but',
+    'and',
+    'or',
+    'if',
+    'while',
+    'that',
+    'this',
+    'it',
+    'its',
+    'i',
+    'me',
+    'my',
+    'we',
+    'our',
+    'you',
+    'your',
+    'he',
+    'him',
+    'his',
+    'she',
+    'her',
+    'they',
+    'them',
+    'their',
+    'what',
+    'which',
+    'who',
+    'whom',
+    'about',
+    'up',
+  ]);
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !stopwords.has(t));
+}
+
+/**
+ * Compute a lexical relevance score (0-1) for a record against query terms.
+ * Matches in skillId get weight 0.4, section title 0.3, chunk text 0.3.
+ * Supports prefix matching: "files" matches "file" in "file-search".
+ * @param {import('./vectorstore').VectorRecord} record
+ * @param {string[]} terms
+ * @returns {number}
+ */
+function computeLexicalScore(record, terms) {
+  const skillLower = (record.skillId || '').toLowerCase();
+  const sectionLower = (record.section || '').toLowerCase();
+  const textLower = (record.text || '').toLowerCase();
+  const textWords = new Set(textLower.split(/\s+/).filter(Boolean));
+  const sectionWords = new Set(sectionLower.split(/[\s-]+/).filter(Boolean));
+  const skillWords = new Set(skillLower.split(/[\s:-]+/).filter(Boolean));
+
+  let skillHits = 0;
+  let sectionHits = 0;
+  let textHits = 0;
+
+  for (const term of terms) {
+    const termStem = term.replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+    // Check full term, stemmed term, and prefix matches
+    /**
+     * @param {string} word
+     */
+    const matches = (word) =>
+      word === term ||
+      word === termStem ||
+      word.startsWith(term) ||
+      word.startsWith(termStem) ||
+      (term.length > 3 && term.startsWith(word));
+    /** @param {string} w */
+    const matchWord = (w) => matches(w);
+    const textMatch = [...textWords].some(matchWord);
+    const sectionMatch = [...sectionWords].some(matchWord);
+    const skillMatch = [...skillWords].some(matchWord);
+
+    if (textMatch) textHits++;
+    if (sectionMatch) sectionHits++;
+    if (skillMatch) skillHits++;
+  }
+
+  const maxHits = terms.length;
+  if (!maxHits) return 0;
+
+  return 0.4 * (skillHits / maxHits) + 0.3 * (sectionHits / maxHits) + 0.3 * (textHits / maxHits);
 }
 
 /**
@@ -193,6 +452,7 @@ module.exports = {
   upsertVectors,
   replaceVectors,
   searchVectors,
+  hybridSearch,
   cosineSimilarity,
   markIndexStale,
   clearIndexStale,

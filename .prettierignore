@@ -6,3 +6,5 @@ CONTEXT.md
 server.out.log
 server.err.log
 *.log
+bench/artifacts
+bench/data

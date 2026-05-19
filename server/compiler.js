@@ -168,8 +168,20 @@ ${flattenSection(ctx.rules.soul, ['soft'])}`);
   }
 
   if (ctx.activeSkills.length) {
+    // Manifest: list every selected skill with description
     const skillList = ctx.activeSkills.map((s) => `- **${s.id}**: ${s.desc}`).join('\n');
     sections.push(`## Skills\n${skillList}`);
+
+    // Multi-resolution chunks: include matched chunks when available
+    if (ctx.mrContext) {
+      const selectedIds = new Set(ctx.activeSkills.map((s) => s.id));
+      for (const [skillId, mrc] of Object.entries(ctx.mrContext)) {
+        if (!selectedIds.has(skillId)) continue;
+        if (!mrc.chunks.length) continue;
+        const chunkParts = mrc.chunks.slice(0, 3).map((chunk, i) => `### ${chunk.section}\n${chunk.text}`);
+        sections.push(`## ${skillId} — Relevant knowledge\n${chunkParts.join('\n\n')}`);
+      }
+    }
   }
 
   return sections.join('\n\n');
@@ -434,6 +446,7 @@ function buildContext(opts) {
     sessionStart: rules?.sessionStart || '',
     activeSkills,
     totalSkills: allSkills.length,
+    mrContext: opts.mrContext || null,
   };
 }
 

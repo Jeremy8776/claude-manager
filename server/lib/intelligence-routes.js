@@ -11,7 +11,7 @@ const {
   saveVectorStore,
   upsertVectors,
   replaceVectors,
-  searchVectors,
+  hybridSearch,
   clearIndexStale,
   getIndexStale,
 } = require('./vectorstore');
@@ -141,7 +141,7 @@ async function handleIntelligenceRequest(req, res, url, deps) {
     return json(res, {
       ok: true,
       query,
-      results: searchVectors(store, embedded.vectors[0] || [], { limit }),
+      results: hybridSearch(store, embedded.vectors[0] || [], query, { limit, diversifyBySkill: true }),
       model: embedded.model,
     });
   }

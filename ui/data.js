@@ -24,10 +24,12 @@ const DEFAULT_RULES = {
   coding: {
     hard: '',
     soft: 'Modular code files.\nComment the why, not the what.',
+    style: '',
   },
   general: {
     hard: '',
     soft: 'Memory is a core skill. Think independently.',
+    style: '',
   },
-  soul: { soft: DEFAULT_SOUL },
+  soul: { soft: DEFAULT_SOUL, style: '' },
 };
