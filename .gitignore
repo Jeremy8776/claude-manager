@@ -70,3 +70,4 @@ __pycache__/
 bench/results-latest.json
 bench/artifacts/
 bench/data/
+bench/fixtures/skills/

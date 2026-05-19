@@ -12,6 +12,8 @@
 @import url('toast.css');
 @import url('command-bar.css');
 @import url('onboarding.css');
+@import url('onboarding-hosts.css');
+@import url('onboarding-flow.css');
 @import url('tab-dashboard.css');
 @import url('tab-config.css');
 @import url('tab-compile.css');

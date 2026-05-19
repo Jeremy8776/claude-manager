@@ -8,3 +8,4 @@ server.err.log
 *.log
 bench/artifacts
 bench/data
+bench/fixtures/skills
