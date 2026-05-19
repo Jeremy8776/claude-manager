@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — Path-A backlog: new onboarding modules, typing deferred to post-merge
 // onboarding-render.js — Host and IDE card markup for the onboarding scan results.
 
 const OnboardingRender = (() => {

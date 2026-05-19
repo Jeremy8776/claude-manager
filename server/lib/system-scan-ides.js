@@ -15,15 +15,15 @@ function expandEnvVar(env) {
 }
 
 /** @param {string} p */
-function isDir(p) {
+async function isDir(p) {
   try {
-    return fs.statSync(p).isDirectory();
+    return (await fs.promises.stat(p)).isDirectory();
   } catch {
     return false;
   }
 }
 
-function probeIDEs() {
+async function probeIDEs() {
   const found = [];
   const seen = new Set();
   for (const ide of IDE_PROBE_PATHS) {
@@ -37,8 +37,8 @@ function probeIDEs() {
         const prefix = base.substring(0, wildIdx);
         const parentDir = path.dirname(prefix);
         try {
-          if (fs.statSync(parentDir).isDirectory()) {
-            const entries = fs.readdirSync(parentDir);
+          if (await isDir(parentDir)) {
+            const entries = await fs.promises.readdir(parentDir);
             const match = entries
               .filter((e) => e.startsWith(path.basename(prefix)))
               .sort()
@@ -51,7 +51,7 @@ function probeIDEs() {
       }
       if (!resolvedPath) {
         try {
-          if (fs.statSync(base).isDirectory()) resolvedPath = base;
+          if (await isDir(base)) resolvedPath = base;
         } catch {
           /* ignore */
         }
@@ -59,7 +59,8 @@ function probeIDEs() {
       if (!resolvedPath) continue;
       const exePath = path.join(resolvedPath, ide.exe);
       try {
-        if (fs.statSync(exePath).isFile()) {
+        const s = await fs.promises.stat(exePath);
+        if (s.isFile()) {
           found.push({
             id: 'ide-' + ide.label.replace(/\s+/g, '-').toLowerCase(),
             label: ide.label,
@@ -77,7 +78,7 @@ function probeIDEs() {
   return found;
 }
 
-function probeAIExtensions() {
+async function probeAIExtensions() {
   const ideExtDirs = [
     { label: 'VS Code', path: path.join(HOMEDIR, '.vscode', 'extensions') },
     {
@@ -95,10 +96,10 @@ function probeAIExtensions() {
   ];
   /** @type {Record<string, string[]>} */
   const perIde = {};
-  for (const ide of ideExtDirs) {
-    if (!isDir(ide.path)) continue;
+  const checks = ideExtDirs.map(async (ide) => {
+    if (!(await isDir(ide.path))) return;
     try {
-      const entries = fs.readdirSync(ide.path);
+      const entries = await fs.promises.readdir(ide.path);
       const found = [];
       for (const ai of AI_EXTENSION_PATTERNS) {
         if (entries.some((e) => e.startsWith(ai.pattern))) found.push(ai.label);
@@ -107,7 +108,8 @@ function probeAIExtensions() {
     } catch {
       /* ignore */
     }
-  }
+  });
+  await Promise.all(checks);
   return perIde;
 }
 

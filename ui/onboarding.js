@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck — Path-A backlog: new onboarding modules, typing deferred to post-merge
 // onboarding.js — Full-window 3-step setup: scan → build → done.
 
 const Onboarding = (() => {
@@ -15,7 +15,7 @@ const Onboarding = (() => {
   let scanning = false;
   let scanPhase = 'config';
   let customScanPaths = [];
-  let scanConfig = { drives: true, homedir: true, workspaces: true };
+  let scanConfig = { drives: false, homedir: true, workspaces: true };
   let indexing = false;
   let buildDone = false;
   let hosts = [];
@@ -376,6 +376,7 @@ const Onboarding = (() => {
   }
 
   function advanceProgress(pct, label) {
+    if (!mounted) return;
     const fill = document.getElementById('ob-progress-fill');
     const lbl = document.getElementById('ob-progress-label');
     if (fill) fill.style.width = pct + '%';

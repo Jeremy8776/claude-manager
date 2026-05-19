@@ -17,42 +17,46 @@ const { probeIDEs, probeAIExtensions } = require('./system-scan-ides');
 
 // ---- Helpers ----
 
-function getDriveRoots() {
+async function getDriveRoots() {
   const drives = [];
   if (process.platform === 'win32') {
+    const checks = [];
     for (let i = 65; i <= 90; i++) {
       const root = `${String.fromCharCode(i)}:\\`;
-      try {
-        if (fs.statSync(root).isDirectory()) drives.push(root);
-      } catch {
-        /* skip */
-      }
+      checks.push(
+        fs.promises.stat(root).then(
+          (s) => (s.isDirectory() ? root : null),
+          () => null,
+        ),
+      );
     }
+    const results = await Promise.all(checks);
+    for (const r of results) if (r) drives.push(r);
   }
   return drives;
 }
 
 /** @param {string} p */
-function isFile(p) {
+async function isFile(p) {
   try {
-    return fs.statSync(p).isFile();
+    return (await fs.promises.stat(p)).isFile();
   } catch {
     return false;
   }
 }
 /** @param {string} p */
-function isDir(p) {
+async function isDir(p) {
   try {
-    return fs.statSync(p).isDirectory();
+    return (await fs.promises.stat(p)).isDirectory();
   } catch {
     return false;
   }
 }
 
 /** @param {string} p */
-function readJsonSafe(p) {
+async function readJsonSafe(p) {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return JSON.parse(await fs.promises.readFile(p, 'utf8'));
   } catch {
     return null;
   }
@@ -69,9 +73,9 @@ function readJsonSafe(p) {
  * @param {{ id: string, label: string, icon: string }} hostDef
  * @param {string} homedir
  */
-function probeHostDir(hostDef, homedir) {
+async function probeHostDir(hostDef, homedir) {
   const hostPath = path.join(homedir, hostDef.id);
-  if (!isDir(hostPath)) return null;
+  if (!(await isDir(hostPath))) return null;
 
   /** @type {SkillEntry[]} */
   const skills = [];
@@ -101,7 +105,7 @@ function probeHostDir(hostDef, homedir) {
 
   // Skills: standard skill dirs
   const skillDir = path.join(hostPath, 'skills');
-  if (isDir(skillDir) && countSkillFiles(skillDir) > 0) {
+  if ((await isDir(skillDir)) && countSkillFiles(skillDir) > 0) {
     result.skills.push({
       path: skillDir,
       label: `${hostDef.label} skills`,
@@ -120,7 +124,7 @@ function probeHostDir(hostDef, homedir) {
       'claude-plugins-official',
       'external_plugins',
     );
-    if (isDir(pluginDir)) {
+    if (await isDir(pluginDir)) {
       const count = countSkillFiles(pluginDir);
       if (count > 0)
         result.skills.push({
@@ -130,7 +134,7 @@ function probeHostDir(hostDef, homedir) {
           names: listSkillNames(pluginDir),
         });
     }
-    if (isDir(externalDir)) {
+    if (await isDir(externalDir)) {
       const count = countSkillFiles(externalDir);
       if (count > 0)
         result.skills.push({
@@ -143,101 +147,140 @@ function probeHostDir(hostDef, homedir) {
   }
 
   // Configs
-  for (const name of CONFIG_FILE_NAMES) {
+  const configChecks = CONFIG_FILE_NAMES.map(async (name) => {
     const p = path.join(hostPath, name);
-    if (isFile(p)) result.configs.push({ path: p, label: name });
-  }
+    if (await isFile(p)) result.configs.push({ path: p, label: name });
+  });
   // Special config locations
   if (hostDef.id === '.cursor') {
-    const mcpPath = path.join(hostPath, 'mcp.json');
-    if (isFile(mcpPath) && !result.configs.some((c) => c.path === mcpPath))
-      result.configs.push({ path: mcpPath, label: 'mcp.json' });
+    configChecks.push(
+      (async () => {
+        const mcpPath = path.join(hostPath, 'mcp.json');
+        if (await isFile(mcpPath)) {
+          if (!result.configs.some((c) => c.path === mcpPath))
+            result.configs.push({ path: mcpPath, label: 'mcp.json' });
+        }
+      })(),
+    );
   }
   if (hostDef.id === '.claude') {
-    const desktopConfig = path.join(
-      process.env.APPDATA || path.join(HOMEDIR, 'AppData', 'Roaming'),
-      'Claude',
-      'claude_desktop_config.json',
+    configChecks.push(
+      (async () => {
+        const desktopConfig = path.join(
+          process.env.APPDATA || path.join(HOMEDIR, 'AppData', 'Roaming'),
+          'Claude',
+          'claude_desktop_config.json',
+        );
+        if (await isFile(desktopConfig))
+          result.configs.push({ path: desktopConfig, label: 'claude_desktop_config.json' });
+      })(),
     );
-    if (isFile(desktopConfig))
-      result.configs.push({ path: desktopConfig, label: 'claude_desktop_config.json' });
   }
   // Kiro: steering.md and settings
   if (hostDef.id === '.kiro') {
-    const steering = path.join(hostPath, 'steering', 'steering.md');
-    if (isFile(steering)) result.instructions.push({ path: steering, label: 'steering/steering.md' });
-    const settings = path.join(hostPath, 'settings', 'settings.json');
-    if (isFile(settings)) result.configs.push({ path: settings, label: 'settings.json' });
+    configChecks.push(
+      (async () => {
+        const steering = path.join(hostPath, 'steering', 'steering.md');
+        if (await isFile(steering))
+          result.instructions.push({ path: steering, label: 'steering/steering.md' });
+      })(),
+    );
+    configChecks.push(
+      (async () => {
+        const settings = path.join(hostPath, 'settings', 'settings.json');
+        if (await isFile(settings)) result.configs.push({ path: settings, label: 'settings.json' });
+      })(),
+    );
   }
   // Antigravity: settings and AI extensions
   if (hostDef.id === '.antigravity') {
-    const agSettings = path.join(
-      process.env.APPDATA || path.join(HOMEDIR, 'AppData', 'Roaming'),
-      'Antigravity',
-      'User',
-      'settings.json',
+    configChecks.push(
+      (async () => {
+        const agSettings = path.join(
+          process.env.APPDATA || path.join(HOMEDIR, 'AppData', 'Roaming'),
+          'Antigravity',
+          'User',
+          'settings.json',
+        );
+        if (await isFile(agSettings)) result.configs.push({ path: agSettings, label: 'settings.json' });
+      })(),
     );
-    if (isFile(agSettings)) result.configs.push({ path: agSettings, label: 'settings.json' });
   }
   // Gemini: GEMINI.md and antigravity MCP config
   if (hostDef.id === '.gemini') {
-    const agMcp = path.join(hostPath, 'antigravity', 'mcp_config.json');
-    if (isFile(agMcp)) {
-      const json = readJsonSafe(agMcp);
-      const servers = json?.mcpServers || json?.servers || {};
-      const count = Object.keys(servers).length;
-      if (count > 0) result.mcpServers.push({ path: agMcp, count, servers: Object.keys(servers) });
-      else result.configs.push({ path: agMcp, label: 'antigravity/mcp_config.json' });
-    }
+    configChecks.push(
+      (async () => {
+        const agMcp = path.join(hostPath, 'antigravity', 'mcp_config.json');
+        if (!(await isFile(agMcp))) return;
+        const json = await readJsonSafe(agMcp);
+        const servers = json?.mcpServers || json?.servers || {};
+        const count = Object.keys(servers).length;
+        if (count > 0) result.mcpServers.push({ path: agMcp, count, servers: Object.keys(servers) });
+        else result.configs.push({ path: agMcp, label: 'antigravity/mcp_config.json' });
+      })(),
+    );
   }
+  await Promise.all(configChecks);
 
   // Instructions
-  for (const name of INSTRUCTION_FILE_NAMES) {
+  const instrChecks = INSTRUCTION_FILE_NAMES.map(async (name) => {
     const p = path.join(hostPath, name);
-    if (isFile(p)) result.instructions.push({ path: p, label: name });
-  }
+    if (await isFile(p)) result.instructions.push({ path: p, label: name });
+  });
   // Special instruction dirs
   if (hostDef.id === '.claude') {
-    const projectsDir = path.join(hostPath, 'projects');
-    if (isDir(projectsDir)) {
-      try {
-        for (const proj of fs.readdirSync(projectsDir)) {
-          const memDir = path.join(projectsDir, proj, 'memory');
-          if (isDir(memDir)) {
+    instrChecks.push(
+      (async () => {
+        const projectsDir = path.join(hostPath, 'projects');
+        if (!(await isDir(projectsDir))) return;
+        try {
+          const projEntries = await fs.promises.readdir(projectsDir);
+          const memChecks = projEntries.map(async (proj) => {
+            const memDir = path.join(projectsDir, proj, 'memory');
+            if (!(await isDir(memDir))) return;
             try {
-              for (const f of fs.readdirSync(memDir)) {
+              const files = await fs.promises.readdir(memDir);
+              for (const f of files) {
                 if (f.endsWith('.md'))
                   result.instructions.push({ path: path.join(memDir, f), label: `memory/${f}` });
               }
             } catch {
               /* ignore */
             }
-          }
+          });
+          await Promise.all(memChecks);
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
-    }
+      })(),
+    );
   }
+  await Promise.all(instrChecks);
 
   // Rules
-  for (const name of RULE_FILE_NAMES) {
+  const ruleChecks = RULE_FILE_NAMES.map(async (name) => {
     const p = path.join(hostPath, name);
-    if (isFile(p)) result.rules.push({ path: p, label: name });
-  }
+    if (await isFile(p)) result.rules.push({ path: p, label: name });
+  });
   if (hostDef.id === '.codex') {
-    const rulesDir = path.join(hostPath, 'rules');
-    if (isDir(rulesDir)) {
-      try {
-        for (const f of fs.readdirSync(rulesDir)) {
-          const p = path.join(rulesDir, f);
-          if (isFile(p)) result.rules.push({ path: p, label: `rules/${f}` });
+    ruleChecks.push(
+      (async () => {
+        const rulesDir = path.join(hostPath, 'rules');
+        if (!(await isDir(rulesDir))) return;
+        try {
+          const files = await fs.promises.readdir(rulesDir);
+          const fileChecks = files.map(async (f) => {
+            const p = path.join(rulesDir, f);
+            if (await isFile(p)) result.rules.push({ path: p, label: `rules/${f}` });
+          });
+          await Promise.all(fileChecks);
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
-    }
+      })(),
+    );
   }
+  await Promise.all(ruleChecks);
 
   // MCP servers from host config
   const mcpConfigs = [];
@@ -253,13 +296,14 @@ function probeHostDir(hostDef, homedir) {
   if (hostDef.id === '.codex') mcpConfigs.push(path.join(hostPath, 'mcp.json'));
   if (hostDef.id === '.cursor') mcpConfigs.push(path.join(hostPath, 'mcp.json'));
   if (hostDef.id === '.windsurf') mcpConfigs.push(path.join(hostPath, 'mcp.json'));
-  for (const mcpPath of mcpConfigs) {
-    if (!isFile(mcpPath)) continue;
-    const json = readJsonSafe(mcpPath);
+  const mcpChecks = mcpConfigs.map(async (mcpPath) => {
+    if (!(await isFile(mcpPath))) return;
+    const json = await readJsonSafe(mcpPath);
     const servers = json?.mcpServers || json?.mcp_servers || {};
     const count = Object.keys(servers).length;
     if (count > 0) result.mcpServers.push({ path: mcpPath, count, servers: Object.keys(servers) });
-  }
+  });
+  await Promise.all(mcpChecks);
 
   // Opportunities (missing global config)
   const expected = OPPORTUNITY_FILES[/** @type {keyof typeof OPPORTUNITY_FILES} */ (hostDef.id)];
@@ -267,7 +311,7 @@ function probeHostDir(hostDef, homedir) {
     const filePath = path.join(hostPath, expected);
     const homedirFile = path.join(homedir, expected);
     // If config doesn't exist inside host dir or at homedir root
-    if (!isFile(filePath) && !isFile(homedirFile)) {
+    if (!(await isFile(filePath)) && !(await isFile(homedirFile))) {
       result.opportunities.push({
         type: 'missing-global-config',
         label: expected,
@@ -280,9 +324,9 @@ function probeHostDir(hostDef, homedir) {
 }
 
 /** @param {Array<{id: string, label: string, path: string, exe: string}>} ideList */
-function probeIdegGroup(ideList) {
+async function probeIdegGroup(ideList) {
   if (!ideList.length) return null;
-  const perIde = probeAIExtensions();
+  const perIde = await probeAIExtensions();
   return {
     id: 'ides',
     label: 'IDEs',
@@ -298,17 +342,18 @@ function probeIdegGroup(ideList) {
  * @param {string[]} customPaths
  * @param {{ skipDrives?: boolean, skipHomedir?: boolean, skipWorkspaces?: boolean }} [opts]
  */
-function scanSystem(customPaths = [], opts = {}) {
-  const { skipDrives = false, skipHomedir = false, skipWorkspaces = false } = opts;
-  const workspaces = skipWorkspaces ? [] : readWorkspaces();
+async function scanSystem(customPaths = [], opts = {}) {
+  const { skipDrives = true, skipHomedir = false, skipWorkspaces = false } = opts;
+  const workspaces = skipWorkspaces ? [] : await readWorkspaces();
 
+  /** @type {any[]} */
   const hosts = [];
   const seenHosts = new Set();
 
   // Probe host dirs from homedir
   if (!skipHomedir) {
-    for (const h of HOSTS) {
-      const data = probeHostDir(h, HOMEDIR);
+    const homedirResults = await Promise.all(HOSTS.map((h) => probeHostDir(h, HOMEDIR)));
+    for (const data of homedirResults) {
       if (data && !seenHosts.has(data.path)) {
         seenHosts.add(data.path);
         hosts.push(data);
@@ -318,44 +363,45 @@ function scanSystem(customPaths = [], opts = {}) {
 
   // Probe host dirs from drives
   if (!skipDrives) {
-    for (const drive of getDriveRoots()) {
-      for (const h of HOSTS) {
-        const p = path.join(drive, h.id);
-        if (seenHosts.has(p)) continue;
-        if (isDir(p)) {
+    const drives = await getDriveRoots();
+    const driveResults = await Promise.all(
+      drives.flatMap((drive) =>
+        HOSTS.map(async (h) => {
+          const p = path.join(drive, h.id);
+          if (seenHosts.has(p)) return null;
+          if (!(await isDir(p))) return null;
           const isWin = process.platform === 'win32';
-          // On Windows, drive-level host dirs overlap with homedir (same user)
-          // Skip if we already found this host from homedir
           const homedirVersion = path.join(HOMEDIR, h.id);
-          if (isWin && isDir(homedirVersion) && seenHosts.has(homedirVersion)) continue;
-          const data = probeHostDir(h, drive);
-          if (data) {
-            seenHosts.add(p);
-            hosts.push(data);
-          }
-        }
-      }
+          if (isWin && (await isDir(homedirVersion)) && seenHosts.has(homedirVersion)) return null;
+          const data = await probeHostDir(h, drive);
+          if (data) seenHosts.add(p);
+          return data;
+        }),
+      ),
+    );
+    for (const data of driveResults) {
+      if (data) hosts.push(data);
     }
   }
 
   // Probe IDEs
-  const ideList = skipDrives && skipHomedir ? [] : probeIDEs();
+  const ideList = skipDrives && skipHomedir ? [] : await probeIDEs();
 
   // Custom paths: scan as additional skill sources
   for (const cp of customPaths) {
-    if (!isDir(cp)) continue;
+    if (!(await isDir(cp))) continue;
     const count = countSkillFiles(cp);
     if (count <= 0) continue;
     let realPath = cp;
     try {
-      realPath = fs.realpathSync(cp);
+      realPath = await fs.promises.realpath(cp);
     } catch {
       /* use unresolved */
     }
     const isWin = process.platform === 'win32';
-    const internalReal = (() => {
+    const internalReal = await (async () => {
       try {
-        return fs.realpathSync(SKILLS_DIR);
+        return await fs.promises.realpath(SKILLS_DIR);
       } catch {
         return SKILLS_DIR;
       }
@@ -396,12 +442,13 @@ function scanSystem(customPaths = [], opts = {}) {
 
   // Scan for standalone rule/instruction files in homedir root and workspaces
   if (!skipHomedir) {
-    scanStandaloneFiles(HOMEDIR, hosts);
+    await scanStandaloneFiles(HOMEDIR, hosts);
   }
   if (!skipDrives) {
-    for (const drive of getDriveRoots()) scanStandaloneFiles(drive, hosts);
+    const drives = await getDriveRoots();
+    await Promise.all(drives.map((d) => scanStandaloneFiles(d, hosts)));
   }
-  for (const ws of workspaces) scanStandaloneFiles(ws, hosts);
+  await Promise.all(workspaces.map((/** @type {string} */ ws) => scanStandaloneFiles(ws, hosts)));
 
   // Filter out hosts with nothing found (empty dirs)
   const populated = hosts.filter(
@@ -415,7 +462,7 @@ function scanSystem(customPaths = [], opts = {}) {
   );
 
   // IDE group
-  const ides = probeIdegGroup(ideList);
+  const ides = await probeIdegGroup(ideList);
 
   return {
     hosts: populated,
@@ -426,12 +473,12 @@ function scanSystem(customPaths = [], opts = {}) {
 }
 
 /** @param {string} dir @param {Array<any>} hosts */
-function scanStandaloneFiles(dir, hosts) {
-  if (!isDir(dir)) return;
+async function scanStandaloneFiles(dir, hosts) {
+  if (!(await isDir(dir))) return;
   // Check for rule/instruction files at the dir root that don't belong to a host dir
   for (const name of RULE_FILE_NAMES) {
     const p = path.join(dir, name);
-    if (!isFile(p)) continue;
+    if (!(await isFile(p))) continue;
     // Skip if it's inside a host dir we already scanned
     if (hosts.some((h) => p.startsWith(h.path + path.sep) || p === h.path)) continue;
     // Attach to a "standalone" section
@@ -456,7 +503,7 @@ function scanStandaloneFiles(dir, hosts) {
   }
   for (const name of INSTRUCTION_FILE_NAMES) {
     const p = path.join(dir, name);
-    if (!isFile(p)) continue;
+    if (!(await isFile(p))) continue;
     if (hosts.some((h) => p.startsWith(h.path + path.sep) || p === h.path)) continue;
     let standalone = hosts.find((h) => h.id === 'standalone-rules');
     if (!standalone) {
@@ -479,9 +526,10 @@ function scanStandaloneFiles(dir, hosts) {
   }
 }
 
-function readWorkspaces() {
+// workspaces.json is created at runtime by the projects API; absence is expected on first run
+async function readWorkspaces() {
   try {
-    const raw = fs.readFileSync(path.join(DATA_DIR, 'workspaces.json'), 'utf8');
+    const raw = await fs.promises.readFile(path.join(DATA_DIR, 'workspaces.json'), 'utf8');
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed?.workspaces)) {
       return parsed.workspaces

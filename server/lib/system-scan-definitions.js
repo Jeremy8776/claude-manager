@@ -51,6 +51,7 @@ const CONFIG_FILE_NAMES = [
   'claude_desktop_config.json',
 ];
 
+// null = host has no standard global config file to create
 const OPPORTUNITY_FILES = {
   '.claude': 'CLAUDE.md',
   '.cursor': '.cursorrules',

@@ -314,10 +314,10 @@ async function handleRequest(req, res, url) {
         skipHomedir: !!data?.skipHomedir,
         skipWorkspaces: !!data?.skipWorkspaces,
       };
-      return json(res, { ok: true, ...scanSystem(customPaths, opts) });
+      return json(res, { ok: true, ...(await scanSystem(customPaths, opts)) });
     }
     if (req.method === 'GET') {
-      return json(res, { ok: true, ...scanSystem() });
+      return json(res, { ok: true, ...(await scanSystem()) });
     }
   }
 

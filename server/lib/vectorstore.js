@@ -7,6 +7,12 @@ const { DATA_DIR } = require('./config');
 const DEFAULT_VECTOR_FILE = path.join(DATA_DIR, 'vectors.json');
 const INDEX_STALE_FILE = path.join(DATA_DIR, 'index-stale.json');
 
+const VECTOR_WEIGHT = 0.6;
+const LEXICAL_WEIGHT = 0.4;
+const LEXICAL_SKILL_WEIGHT = 0.4;
+const LEXICAL_SECTION_WEIGHT = 0.3;
+const LEXICAL_TEXT_WEIGHT = 0.3;
+
 /**
  * Mark the vector index as stale. The next /api/index/status response will
  * carry { stale: true, staleReason, staleSince } so the dashboard + onboarding
@@ -167,7 +173,7 @@ function hybridSearch(store, queryVector, query, options = {}) {
       const lexicalScore = computeLexicalScore(record, terms);
       return {
         ...record,
-        score: 0.6 * vectorScore + 0.4 * lexicalScore,
+        score: VECTOR_WEIGHT * vectorScore + LEXICAL_WEIGHT * lexicalScore,
         lexicalScore,
       };
     })
@@ -216,6 +222,22 @@ function bareSkillId(skillId) {
       .split(':')
       .pop() || String(skillId || '')
   );
+}
+
+/**
+ * Strip common suffixes for loose matching, but never shrink below 3 chars
+ * to avoid false matches (e.g. "string" → "str", "processed" → "process").
+ * @param {string} word
+ */
+function stripSuffix(word) {
+  let stem = word;
+  for (const suffix of ['ing', 'ed', 'es', 's']) {
+    if (stem.endsWith(suffix) && stem.length - suffix.length >= 3) {
+      stem = stem.slice(0, -suffix.length);
+      break;
+    }
+  }
+  return stem;
 }
 
 /**
@@ -348,7 +370,8 @@ function extractQueryTerms(query) {
 
 /**
  * Compute a lexical relevance score (0-1) for a record against query terms.
- * Matches in skillId get weight 0.4, section title 0.3, chunk text 0.3.
+ * Matches in skillId get weight LEXICAL_SKILL_WEIGHT, section title
+ * LEXICAL_SECTION_WEIGHT, chunk text LEXICAL_TEXT_WEIGHT.
  * Supports prefix matching: "files" matches "file" in "file-search".
  * @param {import('./vectorstore').VectorRecord} record
  * @param {string[]} terms
@@ -367,7 +390,7 @@ function computeLexicalScore(record, terms) {
   let textHits = 0;
 
   for (const term of terms) {
-    const termStem = term.replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+    const termStem = stripSuffix(term);
     // Check full term, stemmed term, and prefix matches
     /**
      * @param {string} word
@@ -392,7 +415,11 @@ function computeLexicalScore(record, terms) {
   const maxHits = terms.length;
   if (!maxHits) return 0;
 
-  return 0.4 * (skillHits / maxHits) + 0.3 * (sectionHits / maxHits) + 0.3 * (textHits / maxHits);
+  return (
+    LEXICAL_SKILL_WEIGHT * (skillHits / maxHits) +
+    LEXICAL_SECTION_WEIGHT * (sectionHits / maxHits) +
+    LEXICAL_TEXT_WEIGHT * (textHits / maxHits)
+  );
 }
 
 /**
