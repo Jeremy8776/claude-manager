@@ -34,7 +34,7 @@ function validateRules(data) {
     if (!val || typeof val !== 'object' || Array.isArray(val))
       return { valid: false, error: `Missing or invalid "${key}" section` };
     for (const pkey of Object.keys(val)) {
-      if (!allowed[key].includes(/** @type {any} */ (pkey)))
+      if (!allowed.includes(pkey))
         return { valid: false, error: `"${key}" does not allow priority "${pkey}"` };
       if (typeof val[pkey] !== 'string') return { valid: false, error: `"${key}.${pkey}" must be a string` };
     }
