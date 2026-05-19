@@ -33,6 +33,22 @@ html[data-runtime='electron'] .app {
     'side  main';
 }
 
+/* Electron: draggable strip behind the native titlebar overlay controls */
+.desktop-titlebar {
+  display: none;
+}
+
+html[data-runtime='electron'] .desktop-titlebar {
+  display: block;
+  grid-area: overlay;
+  position: relative;
+  z-index: var(--z-nav);
+  min-height: var(--desktop-titlebar-h);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+
 /* Electron: sidebar brand is the window drag handle */
 html[data-runtime='electron'] .nav-brand {
   -webkit-app-region: drag;
