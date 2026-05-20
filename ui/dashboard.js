@@ -309,7 +309,8 @@ const DashboardTab = (() => {
     host.innerHTML = `
       <div class="smart-budget">
         <div><span class="ct-badge ct-installed">Preview</span><strong>${sel.toLocaleString()} tokens</strong> selected</div>
-        <div class="smart-budget-meta">vs <strong>${all.toLocaleString()}</strong> all on${saved > 0 ? `, saving <strong>${saved.toLocaleString()}</strong>` : ''} (${pct}% of full)</div>
+        ${/* TODO: Remove "quality gate pending" once Recall@8 = 1.00 benchmark passes */ ''}
+        <div class="smart-budget-meta">vs <strong>${all.toLocaleString()}</strong> all on${saved > 0 ? `, saving <strong>${saved.toLocaleString()}</strong>` : ''} (${pct}% of full) — quality gate pending</div>
       </div>
       ${tagRow}
       <div class="smart-selected"><strong>${selected.length}</strong> skills picked: ${selected.map((id) => `<code>${esc(id)}</code>`).join(' ')}</div>

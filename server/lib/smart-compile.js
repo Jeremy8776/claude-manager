@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { DATA_DIR, SKILLS_DIR } = require('./config');
 const { embedTexts, DEFAULT_EMBED_MODEL } = require('./embeddings');
-const { loadVectorStore, searchVectors } = require('./vectorstore');
+const { loadVectorStore, hybridSearch } = require('./vectorstore');
 const { compile, buildContext, estimateTokens, ADAPTERS } = require('../compiler');
 
 /**
@@ -29,15 +29,21 @@ async function smartCompile(input, deps) {
   const embedded = await embedTexts([query], { model: store.model || DEFAULT_EMBED_MODEL });
   if (!embedded.ok) return { ok: false, error: embedded.error, model: embedded.model, status: 503 };
 
-  const matches = searchVectors(store, embedded.vectors[0] || [], { limit: 60 });
+  // Use hybrid search for better lexical matching
+  const matches = hybridSearch(store, embedded.vectors[0] || [], query, { limit: 60 });
   const rankedSkills = rankSkillMatches(matches);
   const selectedSkillIds = fitSkillsToBudget(rankedSkills, input, deps, targets);
+
+  // Multi-resolution output: include matched chunks alongside full skill bodies
+  const mrContext = buildMultiResolutionContext(matches, selectedSkillIds);
+
   const result = compile({
     dataDir: DATA_DIR,
     skillsDir: SKILLS_DIR,
     scanSkills: deps.scanSkills,
     targets,
     selectedSkillIds,
+    mrContext,
   });
   const allOn = estimateAllOn(deps, targets);
   const selectedTokens = Object.values(result.results || {}).reduce(
@@ -167,4 +173,54 @@ function detectProjectStack(projectPath) {
   };
 }
 
-module.exports = { smartCompile, detectProjectStack, rankSkillMatches, normalizeSmartTargets };
+/**
+ * Build a multi-resolution context from vector search matches.
+ * Returns an object keyed by skill ID with matched chunks and relevance info.
+ *
+ * @param {Array<import('./vectorstore').VectorRecord & { score: number, lexicalScore?: number }>} matches
+ * @param {string[]} selectedSkillIds
+ * @returns {Record<string, { skillId: string, score: number, chunks: Array<{ section: string, text: string, score: number }> }>}
+ */
+function buildMultiResolutionContext(matches, selectedSkillIds) {
+  const selected = new Set(selectedSkillIds);
+  /** @type {Record<string, { skillId: string, score: number, chunks: Array<{ section: string, text: string, score: number }> }>} */
+  const result = {};
+
+  for (const match of matches) {
+    if (!selected.has(match.skillId)) continue;
+    if (!(/** @type {any} */ (result)[match.skillId])) {
+      result[match.skillId] = { skillId: match.skillId, score: match.score, chunks: [] };
+    }
+    // Track unique chunks (by section + text hash) to avoid duplicates
+    /** @type {any} */
+    const entry = result[match.skillId];
+    const existing = entry.chunks;
+    const dup = existing.some(
+      (/** @type {{ section: string, text: string }} */ c) =>
+        c.section === match.section && c.text === match.text,
+    );
+    if (!dup) {
+      existing.push({ section: match.section, text: match.text, score: match.score });
+    }
+  }
+
+  // Sort chunks within each skill by score descending
+  for (const skillId of Object.keys(result)) {
+    const chunks = /** @type {{ section: string; text: string; score: number }[]} */ (
+      /** @type {any} */ (result)[skillId].chunks
+    );
+    chunks.sort(
+      (/** @type {{ score: number }} */ a, /** @type {{ score: number }} */ b) => b.score - a.score,
+    );
+  }
+
+  return result;
+}
+
+module.exports = {
+  smartCompile,
+  detectProjectStack,
+  rankSkillMatches,
+  normalizeSmartTargets,
+  buildMultiResolutionContext,
+};

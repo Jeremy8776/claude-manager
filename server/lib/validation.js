@@ -20,18 +20,21 @@ function validateMemory(data) {
 function validateRules(data) {
   if (!data || typeof data !== 'object') return { valid: false, error: 'Must be a JSON object' };
   if (data._parseError) return { valid: false, error: 'Invalid JSON in request body' };
-  const allowed = /** @type {const} */ ({
-    coding: ['hard', 'soft'],
-    general: ['hard', 'soft'],
-    soul: ['soft'],
-  });
-  for (const key of /** @type {('coding'|'general'|'soul')[]} */ (['coding', 'general', 'soul'])) {
+  const codingPriorities = ['hard', 'soft', 'style'];
+  const generalPriorities = ['hard', 'soft', 'style'];
+  const soulPriorities = ['soft', 'style'];
+  const sections = [
+    { key: 'coding', allowed: codingPriorities },
+    { key: 'general', allowed: generalPriorities },
+    { key: 'soul', allowed: soulPriorities },
+  ];
+  for (const { key, allowed } of sections) {
     const val = data[key];
     if (typeof val === 'string') continue;
     if (!val || typeof val !== 'object' || Array.isArray(val))
       return { valid: false, error: `Missing or invalid "${key}" section` };
     for (const pkey of Object.keys(val)) {
-      if (!allowed[key].includes(/** @type {any} */ (pkey)))
+      if (!allowed.includes(pkey))
         return { valid: false, error: `"${key}" does not allow priority "${pkey}"` };
       if (typeof val[pkey] !== 'string') return { valid: false, error: `"${key}.${pkey}" must be a string` };
     }

@@ -162,6 +162,81 @@
   align-items: center;
 }
 
+.rules-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.rules-rule-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.rules-rule-row .rules-rule-check {
+  margin-top: 10px;
+  flex: 0 0 auto;
+}
+
+.rules-rule-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--s-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--fs-02);
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color var(--out);
+}
+
+.rules-rule-input:focus {
+  border-color: var(--line-accent);
+  background: var(--bg-raised);
+  outline: none;
+}
+
+.rules-rule-input::placeholder {
+  color: var(--text-3);
+}
+
+.rules-sev-select {
+  min-width: 110px;
+  min-height: 36px;
+  flex: 0 0 auto;
+}
+
+.rules-rule-del {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--fs-05);
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color var(--out),
+    color var(--out),
+    background var(--out);
+}
+
+.rules-rule-del:hover {
+  border-color: var(--err);
+  color: var(--err);
+  background: var(--err-bg);
+}
+
 .rules-priority-group {
   display: flex;
   flex-direction: column;

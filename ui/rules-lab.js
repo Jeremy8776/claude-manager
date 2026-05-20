@@ -1,26 +1,23 @@
 // @ts-nocheck — Path-A backlog: file in tsconfig include, opt out until incremental typing is done. See docs/llm-handoff.md.
 
-// rules-lab.js - Rules workbench helpers.
+// rules-lab.js — List-based rules editor with per-rule severity tagging.
 
 const RulesLab = (() => {
   const STORE_KEY = 'ce_rules_lab';
   const sections = ['coding', 'general', 'soul'];
   const labels = { coding: 'Coding Rules', general: 'General Rules', soul: 'Soul' };
 
-  const PRIORITY_SECTIONS = {
-    coding: ['hard', 'soft'],
-    general: ['hard', 'soft'],
-    soul: ['soft'],
-  };
+  const ALL_SEVERITIES = ['hard', 'soft', 'style'];
+  const SEVERITY_LABELS = { hard: 'Hard rule', soft: 'Soft rule', style: 'Style' };
 
-  const PRIORITY_LABELS = {
-    hard: 'Hard rules',
-    soft: 'Soft rules',
+  const SECTION_SEVERITIES = {
+    coding: ['hard', 'soft', 'style'],
+    general: ['hard', 'soft', 'style'],
+    soul: ['soft', 'style'],
   };
 
   const defaultMeta = {
     enabled: { coding: true, general: true, soul: true },
-    priority: { coding: 'hard', general: 'hard', soul: 'soft' },
     profiles: {},
     history: [],
     lastSaved: null,
@@ -28,6 +25,133 @@ const RulesLab = (() => {
 
   let meta = loadMeta();
   let booted = false;
+
+  // ---- Convert between priority-blob format and flat list format ----
+
+  /** Parse priority-blob rules into flat list per section */
+  function blobToList(rules) {
+    const result = {};
+    for (const key of sections) {
+      const entry = rules?.[key];
+      const list = [];
+      if (typeof entry === 'string') {
+        entry
+          .split('\n')
+          .filter(Boolean)
+          .forEach((line) => list.push({ text: line, sev: 'soft' }));
+      } else if (entry && typeof entry === 'object') {
+        for (const sev of ALL_SEVERITIES) {
+          const text = entry[sev];
+          if (typeof text === 'string' && text.trim()) {
+            text
+              .split('\n')
+              .filter(Boolean)
+              .forEach((line) => list.push({ text: line, sev }));
+          }
+        }
+      }
+      result[key] = list;
+    }
+    return result;
+  }
+
+  /** Join flat list per section back into priority-blob format */
+  function listToBlob(lists) {
+    const rules = {};
+    for (const key of sections) {
+      const allowed = SECTION_SEVERITIES[key];
+      const bucket = {};
+      for (const sev of allowed) bucket[sev] = '';
+      for (const item of lists[key] || []) {
+        const sev = allowed.includes(item.sev) ? item.sev : allowed[0];
+        bucket[sev] += (bucket[sev] ? '\n' : '') + item.text;
+      }
+      rules[key] = bucket;
+    }
+    return rules;
+  }
+
+  /** Get current flat list from the DOM */
+  function getList() {
+    const list = {};
+    for (const key of sections) {
+      const root = document.getElementById(`rules-${key}-list`);
+      list[key] = [];
+      if (!root) continue;
+      for (const row of root.querySelectorAll('.rules-rule-row')) {
+        const text = row.querySelector('.rules-rule-input')?.value?.trim();
+        const sev = row.querySelector('.rules-sev-select')?.value || 'soft';
+        if (text) list[key].push({ text, sev });
+      }
+    }
+    return list;
+  }
+
+  /** Render the flat list into the DOM for a section */
+  function renderList(key) {
+    const root = document.getElementById(`rules-${key}-list`);
+    if (!root) return;
+    const list = getList();
+    const items = list[key] || [];
+    root.innerHTML = items
+      .map(
+        (item, i) => `
+      <div class="rules-rule-row" data-index="${i}">
+        <input type="checkbox" class="styled-check rules-rule-check" checked onchange="RulesLab.refresh()">
+        <textarea class="rules-rule-input" oninput="RulesLab.refresh()" placeholder="Write rule...">${esc(item.text)}</textarea>
+        <select class="rules-sev-select add-input" data-ce-select onchange="RulesLab.refresh()">
+          ${ALL_SEVERITIES.map((s) => `<option value="${s}"${s === item.sev ? ' selected' : ''}>${SEVERITY_LABELS[s]}</option>`).join('')}
+        </select>
+        <button class="rules-rule-del" onclick="RulesLab.removeRule('${key}', ${i})" title="Remove rule">&times;</button>
+      </div>`,
+      )
+      .join('');
+    updateCounts();
+  }
+
+  function updateCounts() {
+    const list = getList();
+    for (const key of sections) {
+      const el = document.getElementById(`rules-${key}-count`);
+      if (el) el.textContent = `${list[key]?.length || 0} rules`;
+    }
+  }
+
+  // ---- Public API for UI buttons ----
+
+  function addRule(key) {
+    const root = document.getElementById(`rules-${key}-list`);
+    if (!root) return;
+    const defaultSev = SECTION_SEVERITIES[key]?.[0] || 'soft';
+    const row = document.createElement('div');
+    row.className = 'rules-rule-row';
+    row.innerHTML = `
+      <input type="checkbox" class="styled-check rules-rule-check" checked onchange="RulesLab.refresh()">
+      <textarea class="rules-rule-input" oninput="RulesLab.refresh()" placeholder="Write rule..."></textarea>
+      <select class="rules-sev-select add-input" data-ce-select onchange="RulesLab.refresh()">
+        ${ALL_SEVERITIES.map((s) => `<option value="${s}"${s === defaultSev ? ' selected' : ''}>${SEVERITY_LABELS[s]}</option>`).join('')}
+      </select>
+      <button class="rules-rule-del" onclick="RulesLab.removeRule('${key}', ${root.children.length})" title="Remove rule">&times;</button>
+    `;
+    root.appendChild(row);
+    row.querySelector('.rules-rule-input').focus();
+    refresh();
+  }
+
+  function removeRule(key, index) {
+    const root = document.getElementById(`rules-${key}-list`);
+    if (!root) return;
+    const rows = root.querySelectorAll('.rules-rule-row');
+    if (rows[index]) rows[index].remove();
+    // Re-index
+    root.querySelectorAll('.rules-rule-row').forEach((row, i) => {
+      row.dataset.index = i;
+      row.querySelector('.rules-rule-del')?.setAttribute('onclick', `RulesLab.removeRule('${key}', ${i})`);
+    });
+    refresh();
+  }
+
+  // ---- Mount ----
 
   function mount() {
     const root = document.getElementById('rules-root');
@@ -37,12 +161,12 @@ const RulesLab = (() => {
       <section class="rules-hero">
         <div class="section-hdr">
           <h2>Soul &amp; Rules</h2>
-          <p>Instruction policy written to <code>data\\rules.json</code></p>
+          <p>Instruction policy written to <code>data/rules.json</code></p>
         </div>
         <div class="rules-hero-end">
           <div class="rules-file-pill">
             <span>Active file</span>
-            <code>data\\rules.json</code>
+            <code>data/rules.json</code>
           </div>
           <div class="rules-hero-actions">
             <span class="saved-msg rules-saved-inline" id="rules-saved">Saved to disk</span>
@@ -117,37 +241,30 @@ const RulesLab = (() => {
           <div class="rules-issue-list" id="rules-memory-list"></div>
         </section>
         </div>
-      </section>
-       `;
+      </section>`;
   }
 
-  function ruleEditor(key, label) {
-    const priorities = PRIORITY_SECTIONS[key];
-    const isWide = key === 'soul';
-    const sectionsHtml = priorities
-      .map(
-        (p) => `
-      <div class="rules-priority-section">
-        <label class="rules-priority-label">${PRIORITY_LABELS[p]}</label>
-        <textarea class="rules-textarea" id="rules-${key}-${p}" rows="${isWide ? 5 : 3}"></textarea>
-      </div>`,
-      )
-      .join('');
+  function ruleEditor(key) {
+    const extraClass = key === 'soul' ? ' rules-block-wide' : '';
     return `
-      <section class="rules-block${isWide ? ' rules-block-wide' : ''}">
-        <div class="rules-block-hdr"><span>${label}</span><small id="rules-${key}-count">0 words</small></div>
+      <section class="rules-block${extraClass}">
+        <div class="rules-block-hdr">
+          <span>${labels[key]}</span>
+          <small id="rules-${key}-count">0 rules</small>
+        </div>
         <div class="rules-block-controls">
           <label><input type="checkbox" class="styled-check" id="rules-${key}-enabled" checked onchange="RulesLab.refresh()"> Enabled</label>
+          <button class="save-btn small" onclick="RulesLab.addRule('${key}')">+ Add Rule</button>
         </div>
-        <div class="rules-priority-group">
-          ${sectionsHtml}
-        </div>
+        <div class="rules-rule-list" id="rules-${key}-list"></div>
       </section>`;
   }
 
   function panelTab(id, label, active = false) {
     return `<button class="rules-tab${active ? ' active' : ''}" data-rule-tab="${id}" onclick="RulesLab.switchPanel('${id}', this)">${label}</button>`;
   }
+
+  // ---- Init ----
 
   function init() {
     if (booted) return;
@@ -173,7 +290,6 @@ const RulesLab = (() => {
       ...defaultMeta,
       ...(stored || {}),
       enabled: { ...defaultMeta.enabled, ...(stored?.enabled || {}) },
-      priority: { ...defaultMeta.priority, ...(stored?.priority || {}) },
       profiles: { ...(stored?.profiles || {}) },
       history: Array.isArray(stored?.history) ? stored.history : [],
     };
@@ -183,53 +299,65 @@ const RulesLab = (() => {
     localStorage.setItem(STORE_KEY, JSON.stringify(meta));
   }
 
-  /** Read current values from all priority textareas into nested rules format */
+  /** Read current list and convert to priority-blob format */
   function draft() {
-    const rules = {};
-    for (const key of sections) {
-      const priorities = PRIORITY_SECTIONS[key];
-      rules[key] = {};
-      for (const p of priorities) {
-        const el = document.getElementById(`rules-${key}-${p}`);
-        rules[key][p] = el?.value || '';
-      }
-    }
-    return rules;
+    return listToBlob(getList());
   }
 
-  /** Set values of all priority textareas from a rules object (flat or nested) */
+  /** Populate the list UI from a rules object (flat or nested) */
   function setDraft(rules) {
-    sections.forEach((key) => {
-      const priorities = PRIORITY_SECTIONS[key];
+    for (const key of sections) {
+      const root = document.getElementById(`rules-${key}-list`);
+      if (!root) continue;
       const section = rules?.[key];
-      priorities.forEach((p) => {
-        const el = document.getElementById(`rules-${key}-${p}`);
-        if (!el) return;
-        if (typeof section === 'string') {
-          el.value = p === 'soft' ? section : '';
-        } else if (section && typeof section === 'object') {
-          el.value = section[p] || '';
-        } else {
-          el.value = '';
+      const items = [];
+      if (typeof section === 'string') {
+        section
+          .split('\n')
+          .filter(Boolean)
+          .forEach((line) => items.push({ text: line, sev: 'soft' }));
+      } else if (section && typeof section === 'object') {
+        const allowed = SECTION_SEVERITIES[key];
+        for (const sev of allowed) {
+          const text = section[sev];
+          if (typeof text === 'string' && text.trim()) {
+            text
+              .split('\n')
+              .filter(Boolean)
+              .forEach((line) => items.push({ text: line, sev }));
+          }
         }
-      });
-    });
+      }
+      root.innerHTML = items
+        .map(
+          (item, i) => `
+        <div class="rules-rule-row" data-index="${i}">
+          <input type="checkbox" class="styled-check rules-rule-check" checked onchange="RulesLab.refresh()">
+          <textarea class="rules-rule-input" oninput="RulesLab.refresh()" placeholder="Write rule...">${esc(item.text)}</textarea>
+          <select class="rules-sev-select add-input" data-ce-select onchange="RulesLab.refresh()">
+            ${ALL_SEVERITIES.map((s) => `<option value="${s}"${s === item.sev ? ' selected' : ''}>${SEVERITY_LABELS[s]}</option>`).join('')}
+          </select>
+          <button class="rules-rule-del" onclick="RulesLab.removeRule('${key}', ${i})" title="Remove rule">&times;</button>
+        </div>`,
+        )
+        .join('');
+    }
     ConfigTab.updateRuleMetrics?.();
     refresh();
   }
 
   function controlsToMeta() {
-    sections.forEach((key) => {
+    for (const key of sections) {
       meta.enabled[key] = document.getElementById(`rules-${key}-enabled`)?.checked !== false;
-    });
+    }
     saveMeta();
   }
 
   function applyMetaToControls() {
-    sections.forEach((key) => {
-      const enabled = document.getElementById(`rules-${key}-enabled`);
-      if (enabled) enabled.checked = meta.enabled[key] !== false;
-    });
+    for (const key of sections) {
+      const el = document.getElementById(`rules-${key}-enabled`);
+      if (el) el.checked = meta.enabled[key] !== false;
+    }
   }
 
   function captureBaseline() {
@@ -262,9 +390,9 @@ const RulesLab = (() => {
     const defaults = {
       Default: {
         rules: {
-          coding: { hard: '', soft: 'Modular code files.\nComment the why, not the what.' },
-          general: { hard: '', soft: 'Memory is a core skill. Think independently.' },
-          soul: { soft: 'Helpful, concise, and logical.\nObjective and critical thinker.' },
+          coding: { hard: '', soft: 'Modular code files.\nComment the why, not the what.', style: '' },
+          general: { hard: '', soft: 'Memory is a core skill. Think independently.', style: '' },
+          soul: { soft: 'Helpful, concise, and logical.\nObjective and critical thinker.', style: '' },
         },
         enabled: { ...defaultMeta.enabled },
       },
@@ -273,23 +401,26 @@ const RulesLab = (() => {
           coding: {
             hard: 'Prioritise bugs, regressions, missing tests, unsafe assumptions, and architecture drift.\nKeep findings specific and line-referenced.',
             soft: '',
+            style: '',
           },
           general: {
             hard: 'Challenge weak reasoning. State uncertainty clearly. Do not overfit to the user request if the evidence points elsewhere.',
             soft: '',
+            style: '',
           },
-          soul: { soft: 'Direct, concise, critical, and practical.' },
+          soul: { soft: 'Direct, concise, critical, and practical.', style: '' },
         },
         enabled: { coding: true, general: true, soul: true },
       },
       Research: {
         rules: {
-          coding: { hard: '', soft: 'Modular code files.\nComment the why, not the what.' },
+          coding: { hard: '', soft: 'Modular code files.\nComment the why, not the what.', style: '' },
           general: {
             hard: 'Verify time-sensitive facts. Prefer primary sources. Separate evidence from inference.',
             soft: '',
+            style: '',
           },
-          soul: { soft: 'Careful, source-led, and explicit about uncertainty.' },
+          soul: { soft: 'Careful, source-led, and explicit about uncertainty.', style: '' },
         },
         enabled: { coding: true, general: true, soul: true },
       },
@@ -346,13 +477,15 @@ const RulesLab = (() => {
 
   function refresh() {
     controlsToMeta();
+    updateCounts();
     renderPreview();
     renderDiff();
     renderHistory();
     renderMemoryAlignment();
   }
 
-  function switchPanel(id, btn = document.querySelector(`[data-rule-tab="${id}"]`)) {
+  function switchPanel(id, btn) {
+    if (!btn) btn = document.querySelector(`[data-rule-tab="${id}"]`);
     document.querySelectorAll('[data-rule-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.rulePanel !== id;
     });
@@ -368,7 +501,7 @@ const RulesLab = (() => {
       .map((key) => ({
         key,
         label: labels[key],
-        text: flattenSectionText(rules[key], PRIORITY_SECTIONS[key]),
+        text: flattenSectionText(rules[key], SECTION_SEVERITIES[key]),
       }));
   }
 
@@ -423,7 +556,7 @@ const RulesLab = (() => {
   function flattenRules(rules) {
     return sections.flatMap((key) => {
       const section = rules?.[key];
-      const priorities = PRIORITY_SECTIONS[key];
+      const priorities = SECTION_SEVERITIES[key];
       const text = flattenSectionText(section, priorities);
       return [`## ${labels[key]}`, ...(text ? text.split('\n') : [])];
     });
@@ -468,7 +601,7 @@ const RulesLab = (() => {
     return sections
       .map((key) => {
         const section = rules?.[key];
-        const priorities = PRIORITY_SECTIONS[key];
+        const priorities = SECTION_SEVERITIES[key];
         return flattenSectionText(section, priorities);
       })
       .join(' ');
@@ -558,10 +691,15 @@ const RulesLab = (() => {
     init,
     refresh,
     beforeSave,
+    draft,
+    setDraft,
     saveProfile,
     applyProfile,
     restoreHistory,
     switchPanel,
-    PRIORITY_SECTIONS,
+    addRule,
+    removeRule,
+    SECTION_SEVERITIES,
+    ALL_SEVERITIES,
   };
 })();

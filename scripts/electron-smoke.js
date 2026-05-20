@@ -10,6 +10,8 @@ const ROOT = path.resolve(__dirname, '..');
 const ELECTRON_MAIN = path.join(ROOT, 'electron', 'main.cjs');
 const ELECTRON_PRELOAD = path.join(ROOT, 'electron', 'preload.cjs');
 const ELECTRON_UPDATER = path.join(ROOT, 'electron', 'updater.cjs');
+const UI_INDEX = path.join(ROOT, 'ui', 'index.html');
+const UI_SHELL_CSS = path.join(ROOT, 'ui', 'styles', 'shell.css');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
 
 /** @param {unknown} condition @param {string} message */
@@ -47,6 +49,8 @@ function main() {
   const pkg = JSON.parse(read(PACKAGE_JSON));
   const mainSource = read(ELECTRON_MAIN);
   const preloadSource = read(ELECTRON_PRELOAD);
+  const uiIndex = read(UI_INDEX);
+  const shellCss = read(UI_SHELL_CSS);
 
   assertRelativeRequiresResolve(ELECTRON_MAIN);
   assertRelativeRequiresResolve(ELECTRON_PRELOAD);
@@ -60,6 +64,11 @@ function main() {
   assert(mainSource.includes('contextIsolation: true'), 'preload boundary must use context isolation');
   assert(mainSource.includes('nodeIntegration: false'), 'renderer must keep nodeIntegration disabled');
   assert(mainSource.includes("titleBarStyle: 'hidden'"), 'main window must use hidden native titlebar');
+  assert(uiIndex.includes('class="desktop-titlebar"'), 'hidden native titlebar needs a drag strip');
+  assert(
+    shellCss.includes('.desktop-titlebar') && shellCss.includes('-webkit-app-region: drag'),
+    'desktop titlebar strip must be draggable',
+  );
   assert(mainSource.includes('CE_HOT_RELOAD'), 'main process must support hot reload mode');
   assert(preloadSource.includes('contextBridge.exposeInMainWorld'), 'preload must expose a narrow bridge');
   assert(preloadSource.includes('window:minimize'), 'preload must expose window controls through IPC');

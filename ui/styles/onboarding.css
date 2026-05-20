@@ -1,743 +1,450 @@
-/* Onboarding wizard — modal frame, horizontal progress, DRAM-tokened cards. */
-/* Spec: docs/specs/onboarding-redesign.md */
+/* onboarding.css — Full-window 4-step setup: scan → review → build → done.
+   DRAM-polished: centered content, generous viewport use, subtle surfaces. */
 
-.onboarding-overlay {
+.ob-root {
   position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  padding: 0;
-  background: var(--dram-card-bg);
-}
-
-.onboarding-dialog {
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
+  background: var(--bg);
+  color: var(--text);
   overflow: hidden;
-  background: var(--dram-card-bg);
-  border: 0;
-  border-radius: 0;
 }
 
-/* Header */
-
-.onboarding-header {
-  display: flex;
-  gap: var(--s-3);
-  align-items: center;
-  padding: var(--s-4) var(--s-5);
-  border-bottom: 1px solid var(--dram-line-subtle);
-}
-
-.onboarding-brand-icon {
+.ob-drag {
+  -webkit-app-region: drag;
+  height: var(--desktop-titlebar-h);
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-2);
 }
 
-.onboarding-header-text {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  gap: 2px;
-}
-
-.onboarding-header-text h2 {
-  margin: 0;
+.ob-title {
+  text-align: center;
   font-size: var(--fs-07);
   font-weight: 600;
   color: var(--text);
-}
-
-.onboarding-header-text p {
+  padding: var(--s-5) var(--s-7) 0;
   margin: 0;
-  color: var(--text-3);
-  font-size: var(--fs-01);
+  letter-spacing: var(--tr-tight);
 }
 
-.onboarding-close {
-  display: grid;
-  flex: 0 0 auto;
+.ob-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.ob-brand-icon {
   width: 28px;
   height: 28px;
-  place-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-2);
-  color: var(--text-3);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.onboarding-close:hover {
-  background: var(--dram-bg-hover);
-  border-color: var(--dram-line-subtle);
-  color: var(--text);
-}
-
-/* Progress strip */
-
-.onboarding-progress {
-  display: flex;
-  gap: var(--s-2);
-  align-items: center;
-  justify-content: center;
-  padding: var(--s-4) var(--s-5);
-  border-bottom: 1px solid var(--dram-line-subtle);
-}
-
-.onboarding-progress-step {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-  flex: 0 0 auto;
-}
-
-.onboarding-progress-circle {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  background: var(--dram-bg-recessed);
-  border: 1px solid var(--dram-line-subtle);
-  border-radius: 999px;
-  color: var(--text-4);
-  font-size: var(--fs-01);
-  font-weight: 600;
-}
-
-.onboarding-progress-step.current .onboarding-progress-circle,
-.onboarding-progress-step.done .onboarding-progress-circle {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--dram-text-on-accent);
-}
-
-.onboarding-progress-label {
-  color: var(--text-3);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-}
-
-.onboarding-progress-step.current .onboarding-progress-label {
-  color: var(--text);
-}
-
-.onboarding-progress-bar {
-  flex: 0 0 32px;
-  height: 1px;
-  margin-bottom: 20px;
-  background: var(--dram-line-subtle);
-}
-
-.onboarding-progress-bar.done {
-  background: var(--accent);
-}
-
-/* Body + steps */
-
-.onboarding-body {
-  flex: 1;
-  min-height: 0;
-  padding: var(--s-6) var(--s-5);
-  overflow-y: auto;
-}
-
-/* Cap step content width on wide viewports so prose + cards stay readable.
-   The dialog itself fills the viewport (full-screen), but the step body
-   centers its content within a comfortable line-length. */
-.onboarding-step-body {
-  display: grid;
-  gap: var(--s-4);
-  width: 100%;
-  max-width: 880px;
-  margin: 0 auto;
-}
-
-.onboarding-step-head {
-  display: grid;
-  gap: 4px;
-}
-
-.onboarding-step-head h3 {
-  margin: 0;
-  font-size: var(--fs-06);
-  font-weight: 600;
-  color: var(--text);
-}
-
-.onboarding-step-head p {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--fs-02);
-  line-height: 1.5;
-}
-
-/* Card token contract — DRAM-aligned. Applied directly to onboarding card
-   surfaces so the global `.card` component class (which is flex-column) is
-   not pulled into rows that need a different layout. */
-
-.onboarding-host,
-.onboarding-stat,
-.onboarding-active-skills,
-.onboarding-surface,
-.onboarding-health,
-.onboarding-empty {
-  background: var(--dram-card-bg);
-  border: 1px solid var(--dram-card-border);
-  border-radius: var(--r-3);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.onboarding-card-name {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text);
-}
-
-.onboarding-card-desc {
-  color: var(--text-3);
-  font-size: var(--fs-02);
-  line-height: 1.45;
-}
-
-/* Step 1: host list */
-
-.onboarding-host-list {
-  display: grid;
-  gap: var(--s-3);
-}
-
-.onboarding-host {
-  display: flex;
-  gap: var(--s-3);
-  align-items: flex-start;
-  padding: var(--s-3);
-  cursor: pointer;
-}
-
-.onboarding-host:hover {
-  background: var(--dram-card-hover);
-  border-color: var(--dram-card-border-hover);
-}
-
-.onboarding-host.selected {
-  background: var(--dram-card-active);
-  border-color: var(--dram-card-border-active);
-}
-
-.onboarding-host.disabled {
-  cursor: default;
-  opacity: var(--dram-card-muted-opacity);
-}
-
-.onboarding-host-input {
-  flex: 0 0 auto;
-  margin-top: 4px;
-}
-
-.onboarding-host-icon,
-.onboarding-surface-icon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  background: var(--dram-bg-recessed);
-  border: 1px solid var(--dram-line-subtle);
-  border-radius: var(--r-2);
-  color: var(--text);
-  font-weight: 700;
-}
-
-.onboarding-host-icon {
-  width: 32px;
-  height: 32px;
-  font-size: 13px;
-}
-
-.onboarding-host-body {
-  display: grid;
-  flex: 1;
-  gap: 4px;
-  min-width: 0;
-}
-
-.onboarding-host-top {
-  display: flex;
-  gap: var(--s-2);
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* Step 2: stat grid + active skills */
-
-.onboarding-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-3);
-}
-
-.onboarding-stat {
-  display: grid;
-  gap: 4px;
-  padding: var(--s-3);
-  min-width: 0;
-}
-
-.onboarding-stat-value {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.onboarding-active-skills {
-  display: grid;
-  gap: 6px;
-  padding: var(--s-3);
-}
-
-.onboarding-inline-action {
-  justify-self: start;
-}
-
-/* In-flight progress card shown while DS.indexSkills is running. Replaces
-   the Build button so the user can see something is happening; without
-   this the click-to-API-return gap (10-60s for 100+ skills via Ollama)
-   reads as "the button didn't do anything". role="status" + aria-live so
-   screen readers announce the change. */
-.onboarding-progress-card {
-  display: flex;
-  gap: var(--s-3);
-  align-items: center;
-  padding: var(--s-3) var(--s-4);
-  background: var(--dram-bg-recessed);
-  border: 1px solid var(--dram-line-subtle);
-  border-radius: var(--r-2);
-}
-
-.onboarding-progress-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.onboarding-progress-text strong {
-  color: var(--text);
-  font-size: var(--fs-03);
-}
-
-.onboarding-progress-text span {
-  color: var(--text-3);
-  font-size: var(--fs-02);
-  line-height: 1.45;
-}
-
-.onboarding-spinner {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  border: 2px solid var(--dram-line-subtle);
-  border-top-color: var(--accent);
-  animation: onboarding-spin 0.9s linear infinite;
-}
-
-@keyframes onboarding-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Footer error band — shown when Finish setup couldn't get an ack from
-   the server-side completion endpoint. Spans the footer's full width
-   above the action buttons so the user has clear retry/Skip options. */
-.onboarding-footer-error {
-  flex: 1 1 100%;
-  order: -1;
-  padding: var(--s-2) var(--s-3);
-  background: var(--err-bg);
-  border-left: 2px solid var(--err);
   border-radius: var(--r-1);
-  color: var(--text);
-  font-size: var(--fs-02);
 }
 
-/* Step 2: skill sources sub-section */
-
-.onboarding-sources {
-  display: grid;
-  gap: var(--s-3);
-  padding-top: var(--s-3);
-  border-top: 1px solid var(--dram-line-subtle);
-}
-
-.onboarding-sources-head {
-  display: grid;
-  gap: 4px;
-}
-
-.onboarding-source-list {
-  display: grid;
-  gap: var(--s-2);
-}
-
-.onboarding-source-row {
-  display: grid;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  background: var(--dram-card-bg);
-  border: 1px solid var(--dram-card-border);
-  border-radius: var(--r-2);
-}
-
-.onboarding-source-row.linked {
-  border-color: var(--dram-card-border-hover);
-}
-
-.onboarding-source-row.expanded {
-  border-color: var(--dram-card-border-active);
-}
-
-.onboarding-source-row-top {
-  display: flex;
-  gap: var(--s-3);
-  align-items: center;
-}
-
-.onboarding-source-row-body {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-
-.onboarding-source-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, monospace);
-  font-size: var(--fs-01);
-  color: var(--text-4);
-}
-
-.onboarding-source-row-meta {
-  display: flex;
-  gap: var(--s-2);
-  align-items: center;
-  flex: 0 0 auto;
-}
-
-.onboarding-source-empty {
-  padding: var(--s-3);
-  background: var(--dram-bg-recessed);
-  border: 1px dashed var(--dram-line-subtle);
-  border-radius: var(--r-2);
-}
-
-.onboarding-source-form {
-  display: flex;
-  gap: var(--s-2);
-  align-items: center;
-}
-
-.onboarding-source-input {
-  flex: 1;
-  padding: 8px 10px;
-  background: var(--dram-bg-recessed);
-  border: 1px solid var(--dram-line-subtle);
-  border-radius: var(--r-2);
-  color: var(--text);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--fs-02);
-}
-
-.onboarding-source-input:focus {
-  outline: none;
-  border-color: var(--dram-card-border-hover);
-}
-
-.onboarding-linked-head {
-  padding-top: var(--s-1);
-}
-
-.onboarding-source-message {
-  padding: var(--s-2) var(--s-3);
-  background: var(--dram-bg-recessed);
-  border-left: 2px solid var(--accent);
-  border-radius: var(--r-1);
-  color: var(--text-3);
-  font-size: var(--fs-02);
-}
-
-/* Diff panel (expanded linked row showing sync changes) */
-
-.onboarding-diff-panel {
-  display: grid;
-  gap: var(--s-2);
-  padding-top: var(--s-2);
-  border-top: 1px solid var(--dram-line-subtle);
-}
-
-.onboarding-diff-group {
-  display: grid;
-  gap: 4px;
-}
-
-.onboarding-diff-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text-3);
-}
-
-.onboarding-diff-group[data-kind='added'] .onboarding-diff-label {
-  color: var(--ok);
-}
-
-.onboarding-diff-group[data-kind='removed'] .onboarding-diff-label {
-  color: var(--err);
-}
-
-.onboarding-diff-group[data-kind='modified'] .onboarding-diff-label {
-  color: var(--warn);
-}
-
-.onboarding-diff-group[data-kind='local'] .onboarding-diff-label {
-  color: var(--warn);
-}
-
-.onboarding-diff-group[data-kind='conflict'] .onboarding-diff-label {
-  color: var(--err);
-}
-
-.onboarding-diff-warning {
-  padding: var(--s-2) var(--s-3);
-  background: var(--err-bg);
-  border-left: 2px solid var(--err);
-  border-radius: var(--r-1);
-  color: var(--text);
-  font-size: var(--fs-02);
-  line-height: 1.5;
-}
-
-.onboarding-diff-files {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0 0 0 var(--s-3);
-  list-style: none;
-  font-family: var(--font-mono, monospace);
-  font-size: var(--fs-01);
-  color: var(--text-3);
-}
-
-.onboarding-diff-files li {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.onboarding-diff-more {
-  color: var(--text-4);
-  font-style: italic;
-}
-
-.onboarding-diff-actions {
-  display: flex;
-  gap: var(--s-2);
-  justify-content: flex-end;
-  align-items: center;
-  padding-top: var(--s-2);
-}
-
-/* Connections-tab Sources panel — same row patterns as onboarding, different
-   outer container. The .onboarding-source-row classes are reused via class
-   composition; the .ssp-* wrappers handle the inline panel layout. */
-
-#skill-sources-section .skill-sources-title {
+.ob-brand-text h1 {
   margin: 0;
   font-size: var(--fs-04);
   font-weight: 600;
   color: var(--text);
+  letter-spacing: var(--tr-tight);
 }
 
-#skill-sources-section .skill-sources-subtitle {
-  margin: 4px 0 0;
-  color: var(--text-3);
-  font-size: var(--fs-02);
-  line-height: 1.5;
+.ob-brand-text p {
+  margin: 2px 0 0;
+  color: var(--text-4);
+  font-size: var(--fs-01);
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  font-family: var(--mono);
 }
 
-#skill-sources-panel {
-  display: grid;
-  gap: var(--s-3);
+.ob-skip {
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg-sunken);
+  color: var(--text-4);
+  font-family: var(--mono);
+  font-size: var(--fs-01);
+  font-weight: 600;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color var(--out),
+    color var(--out);
 }
 
-.ssp-list {
-  display: grid;
-  gap: var(--s-2);
+.ob-skip:hover {
+  border-color: var(--line-accent);
+  color: var(--accent-hi);
 }
 
-.ssp-empty {
-  padding: var(--s-3);
-  background: var(--dram-bg-recessed);
-  border: 1px dashed var(--dram-line-subtle);
-  border-radius: var(--r-2);
-  color: var(--text-3);
-  font-size: var(--fs-02);
-}
-
-.ssp-form {
+/* ── Step indicator ── */
+.ob-steps {
   display: flex;
-  gap: var(--s-2);
   align-items: center;
+  justify-content: center;
+  padding: var(--s-6) var(--s-7) 0;
 }
 
-.ssp-input {
+.ob-steps-inner {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  max-width: 520px;
+}
+
+.ob-step-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
   flex: 1;
-  padding: 8px 10px;
-  background: var(--dram-bg-recessed);
-  border: 1px solid var(--dram-line-subtle);
-  border-radius: var(--r-2);
+  position: relative;
+}
+
+.ob-step-num {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-full);
+  background: var(--bg-sunken);
+  border: 1.5px solid var(--line);
+  color: var(--text-4);
+  font-size: var(--fs-03);
+  font-weight: 700;
+  transition:
+    background var(--out),
+    border-color var(--out),
+    color var(--out),
+    box-shadow var(--out);
+}
+
+.ob-step-pill.done .ob-step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ob-step-pill.current .ob-step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow:
+    0 0 0 4px var(--accent-bg),
+    0 0 20px var(--accent-glow);
+}
+
+.ob-step-label {
+  color: var(--text-4);
+  font-family: var(--mono);
+  font-size: var(--fs-01);
+  font-weight: 600;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: color var(--out);
+}
+
+.ob-step-pill.current .ob-step-label {
   color: var(--text);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--fs-02);
 }
 
-.ssp-input:focus {
-  outline: none;
-  border-color: var(--dram-card-border-hover);
+.ob-step-pill.done .ob-step-label {
+  color: var(--text-2);
 }
 
-.ssp-linked-head {
-  padding-top: var(--s-1);
+.ob-step-connector {
+  flex: 1;
+  height: 1.5px;
+  background: var(--line);
+  margin: 0 var(--s-2);
+  margin-bottom: 24px;
+  transition: background var(--out);
 }
 
-/* Step 3: surface grid */
-
-.onboarding-surface-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-3);
+.ob-step-pill.done ~ .ob-step-connector {
+  background: var(--accent-line);
 }
 
-.onboarding-surface {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: var(--s-3);
-  padding: var(--s-3);
-  min-width: 0;
-}
-
-.onboarding-surface-icon {
-  width: 34px;
-  height: 34px;
-  font-size: 13px;
-}
-
-.onboarding-surface-body {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.onboarding-surface-top {
+/* ── Body ── */
+.ob-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
-  gap: var(--s-2);
-  align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  padding: var(--s-8) var(--s-7) var(--s-6);
 }
 
-.onboarding-surface-detail {
+.ob-body-inner {
+  width: 100%;
+  max-width: 860px;
+}
+
+.ob-step-head {
+  margin-bottom: var(--s-7);
+}
+
+.ob-step-head h2 {
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-07);
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.ob-step-head p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-04);
+  line-height: 1.6;
+  max-width: 520px;
+}
+
+.ob-step-total {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  padding: var(--s-1) var(--s-3);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-full);
+  color: var(--accent-hi);
+  font-family: var(--mono);
+  font-size: var(--fs-02);
+  font-weight: 650;
+}
+
+.ob-step-total::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+/* ── Scan category grid ── */
+/* ── Sections (candidate lists, source rows) ── */
+.ob-section {
+  display: grid;
+  gap: var(--s-3);
+  margin-bottom: var(--s-6);
+}
+
+.ob-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--s-2);
+  padding-bottom: var(--s-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.ob-section-label {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: var(--fs-02);
+  font-weight: 600;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+}
+
+.ob-row-list {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  overflow: hidden auto;
+  max-height: 320px;
+}
+
+.ob-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--dram-card-bg);
+  transition: background var(--out);
+}
+
+.ob-row:hover {
+  background: var(--dram-card-hover);
+}
+
+.ob-row-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ob-row-icon img {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+  opacity: 0.92;
+  filter: grayscale(1) invert(1);
+}
+
+.ob-row-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent-hi);
+}
+
+.ob-row-icon-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  font-size: var(--fs-03);
+  font-weight: 700;
+}
+
+.ob-row-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ob-row-name {
+  color: var(--text);
+  font-size: var(--fs-04);
+  font-weight: 500;
+}
+
+.ob-row-path {
+  color: var(--text-4);
+  font-family: var(--mono);
+  font-size: var(--fs-01);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Step 4: health grid */
+.ob-row .ct-badge {
+  flex: 0 0 auto;
+}
 
-.onboarding-health-grid {
+.ob-row .ct-badge.muted {
+  opacity: 0.45;
+}
+
+.ob-row .ct-badge.ok {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+
+.ob-accordion-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  overflow: hidden auto;
+  max-height: 320px;
+}
+
+.ob-accordion {
+  background: var(--dram-card-bg);
+}
+
+.ob-accordion-hdr {
+  display: flex;
+  align-items: center;
   gap: var(--s-3);
-}
-
-.onboarding-health {
-  display: grid;
-  gap: 6px;
-  padding: var(--s-3);
-  min-width: 0;
-}
-
-.onboarding-health.ready {
-  border-color: var(--dram-card-border-hover);
-}
-
-.onboarding-health-value {
-  font-size: var(--fs-06);
-  font-weight: 600;
+  padding: var(--s-3) var(--s-4);
+  width: 100%;
+  border: none;
+  background: transparent;
   color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background var(--out);
 }
 
-.onboarding-health.pending .onboarding-health-value {
-  color: var(--warn);
+.ob-accordion-hdr:hover {
+  background: var(--dram-card-hover);
 }
 
-/* Empty state */
+.ob-accordion-chev {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  transition: transform 0.15s ease;
+}
 
-.onboarding-empty {
+.ob-accordion-open .ob-accordion-chev {
+  transform: rotate(180deg);
+}
+
+.ob-accordion-body {
+  display: none;
+  padding: 0 var(--s-4) var(--s-3) var(--s-4);
+  border-top: 1px solid var(--line);
+}
+
+.ob-accordion-open .ob-accordion-body {
+  display: block;
+}
+
+.ob-skill-list {
+  list-style: none;
+  margin: var(--s-2) 0;
+  padding: 0;
   display: grid;
-  gap: 6px;
-  padding: var(--s-4);
+  gap: 2px var(--s-3);
+  max-height: 200px;
+  overflow-y: auto;
 }
 
-/* Footer */
-
-.onboarding-footer {
+.ob-skill-list li {
   display: flex;
+  align-items: baseline;
   gap: var(--s-2);
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  padding: var(--s-4) var(--s-5);
-  border-top: 1px solid var(--dram-line-subtle);
+  font-size: var(--fs-02);
+  color: var(--text-2);
+  padding: 1px 0;
 }
 
-.onboarding-footer-end {
+.ob-skill-cat {
+  color: var(--text-4);
+  font-size: var(--fs-01);
+  font-family: var(--mono);
+}
+
+.ob-skill-cat::after {
+  content: ' / ';
+}
+
+.ob-accordion-actions {
   display: flex;
-  gap: var(--s-2);
   align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-1);
 }
 
-/* Responsive */
-
-@media (max-width: 720px) {
-  .onboarding-stat-grid,
-  .onboarding-surface-grid,
-  .onboarding-health-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .onboarding-progress-label {
-    display: none;
-  }
-
-  .onboarding-progress-bar {
-    flex-basis: 16px;
-    margin-bottom: 0;
-  }
+.ob-accordion-actions .ct-badge.linked {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok);
 }

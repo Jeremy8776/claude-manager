@@ -15,6 +15,9 @@ data/modes.json
 Thumbs.db
 .env
 
+# Canonical shared context root — all AI tool configs consolidated here
+.context/
+
 # Per-contributor Claude Code config (preview launcher, etc.)
 .claude/
 
@@ -65,3 +68,6 @@ out/
 *.deb
 __pycache__/
 bench/results-latest.json
+bench/artifacts/
+bench/data/
+bench/fixtures/skills/

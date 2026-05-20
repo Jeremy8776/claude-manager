@@ -34,10 +34,14 @@ const newUserProfile =
 if (newUserProfile) {
   // Test isolation: keep both userData AND the writable CE_ROOT under the
   // repo so a smoke run never leaks into a real user's data.
-  const userDataPath = path.join(__dirname, '..', '..', '.electron-user-data');
+  const profileRoot =
+    process.env.CE_ROOT ||
+    process.argv.find((arg) => arg.startsWith('--ce-root='))?.slice('--ce-root='.length) ||
+    path.join(__dirname, '..', '..', '.tmp', 'new-user-profile');
+  const userDataPath = path.join(profileRoot, '.electron-user-data');
   fs.mkdirSync(userDataPath, { recursive: true });
   app.setPath('userData', userDataPath);
-  if (!process.env.CE_ROOT) process.env.CE_ROOT = userDataPath;
+  if (!process.env.CE_ROOT) process.env.CE_ROOT = profileRoot;
   console.log(`[ce-electron] isolated userData: ${userDataPath}`);
 } else if (app.isPackaged && !process.env.CE_ROOT) {
   const userData = app.getPath('userData');
@@ -173,7 +177,11 @@ function createWindow() {
     icon: appIconPath,
     show: false,
     titleBarStyle: 'hidden',
-    titleBarOverlay: false,
+    titleBarOverlay: {
+      color: windowBackground,
+      symbolColor: '#ffffff',
+      height: 32,
+    },
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -184,6 +192,12 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  const revealWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible()) return;
+    mainWindow.show();
+    mainWindow.focus();
+  };
 
   // Some dev-mode launches don't fully honour the constructor `icon` for the
   // taskbar entry. Explicitly setting it after construction is the reliable path.
@@ -196,11 +210,9 @@ function createWindow() {
   }
 
   void mainWindow.loadURL(`http://127.0.0.1:${PORT}/`);
-  mainWindow.once('ready-to-show', () => {
-    if (!mainWindow) return;
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  mainWindow.once('ready-to-show', revealWindow);
+  mainWindow.webContents.once('did-finish-load', revealWindow);
+  setTimeout(revealWindow, 5000);
   if (smokeMode) {
     mainWindow.webContents.once('did-finish-load', () => {
       console.log('electron launch smoke ok');

@@ -363,6 +363,8 @@ declare const RulesLab: {
   init(): Promise<void> | void;
   refresh(): void;
   beforeSave(): void;
+  draft(): any;
+  setDraft(rules: any): void;
   saveProfile(): Promise<void>;
   applyProfile(): Promise<void>;
   restoreHistory(index: number): void;

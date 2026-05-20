@@ -5,9 +5,9 @@
 const ConfigTab = (() => {
   // Priority sections per rule category (must match RulesLab.PRIORITY_SECTIONS)
   const PRIORITY_SECTIONS = {
-    coding: ['hard', 'soft'],
-    general: ['hard', 'soft'],
-    soul: ['soft'],
+    coding: ['hard', 'soft', 'style'],
+    general: ['hard', 'soft', 'style'],
+    soul: ['soft', 'style'],
   };
 
   /** Get all textarea IDs for a given section key */
@@ -22,13 +22,17 @@ const ConfigTab = (() => {
 
   function load() {
     const r = RS.get();
+    if (typeof RulesLab !== 'undefined' && RulesLab.setDraft) {
+      RulesLab.setDraft(r);
+      return;
+    }
     Object.keys(PRIORITY_SECTIONS).forEach((key) => {
       const section = r[key];
       PRIORITY_SECTIONS[key].forEach((p) => {
         const el = document.getElementById(`rules-${key}-${p}`);
         if (!el) return;
         if (typeof section === 'string') {
-          el.value = p === 'preference' ? section : '';
+          el.value = p === 'soft' ? section : '';
         } else if (section && typeof section === 'object') {
           el.value = section[p] || '';
         } else {
@@ -40,18 +44,44 @@ const ConfigTab = (() => {
   }
 
   function save() {
+    const data =
+      typeof RulesLab !== 'undefined' && RulesLab.draft
+        ? RulesLab.draft()
+        : (() => {
+            const legacyData = {};
+            Object.keys(PRIORITY_SECTIONS).forEach((key) => {
+              legacyData[key] = {};
+              PRIORITY_SECTIONS[key].forEach((p) => {
+                const el = document.getElementById(`rules-${key}-${p}`);
+                legacyData[key][p] = el?.value?.trim() || '';
+              });
+            });
+            return legacyData;
+          })();
     if (typeof RulesLab !== 'undefined') RulesLab.beforeSave();
-    const data = {};
-    Object.keys(PRIORITY_SECTIONS).forEach((key) => {
-      data[key] = {};
-      PRIORITY_SECTIONS[key].forEach((p) => {
-        const el = document.getElementById(`rules-${key}-${p}`);
-        data[key][p] = el?.value?.trim() || '';
-      });
-    });
     RS.save(data);
     updateRuleMetrics();
     flash('rules-saved');
+  }
+
+  function updateRuleMetrics() {
+    if (typeof RulesLab !== 'undefined' && document.getElementById('rules-coding-list')) {
+      RulesLab.refresh();
+      return;
+    }
+    Object.keys(PRIORITY_SECTIONS).forEach((key) => {
+      const metric = document.getElementById(`rules-${key}-count`);
+      if (!metric) return;
+      let words = 0;
+      let lines = 0;
+      PRIORITY_SECTIONS[key].forEach((p) => {
+        const el = document.getElementById(`rules-${key}-${p}`);
+        if (!el) return;
+        words += el.value.trim().split(/\s+/).filter(Boolean).length;
+        lines += el.value.split(/\n/).filter((l) => l.trim()).length;
+      });
+      metric.textContent = `${words} words / ${lines} lines`;
+    });
   }
 
   async function reset() {
@@ -67,22 +97,6 @@ const ConfigTab = (() => {
     if (typeof RulesLab !== 'undefined') RulesLab.beforeSave();
     flash('rules-saved');
     Toast.info('Rules reset to defaults');
-  }
-
-  function updateRuleMetrics() {
-    Object.keys(PRIORITY_SECTIONS).forEach((key) => {
-      const metric = document.getElementById(`rules-${key}-count`);
-      if (!metric) return;
-      let words = 0;
-      let lines = 0;
-      PRIORITY_SECTIONS[key].forEach((p) => {
-        const el = document.getElementById(`rules-${key}-${p}`);
-        if (!el) return;
-        words += el.value.trim().split(/\s+/).filter(Boolean).length;
-        lines += el.value.split(/\n/).filter((l) => l.trim()).length;
-      });
-      metric.textContent = `${words} words / ${lines} lines`;
-    });
   }
 
   function flash(id) {

@@ -69,23 +69,24 @@ async function run() {
     const discovery = await js(
       win,
       `(() => ({
-        heading: document.querySelector('#onboarding-title')?.textContent || '',
-        hosts: document.querySelectorAll('.onboarding-host').length,
-        stats: document.querySelectorAll('.onboarding-stat').length,
+        heading: document.querySelector('.ob-title')?.textContent || '',
+        scanHeading: document.querySelector('.ob-step-head h2')?.textContent || '',
+        locations: document.querySelectorAll('.ob-row').length,
       }))()`,
     );
-    assert(/Welcome to Context Engine/i.test(discovery.heading), 'Onboarding heading is missing');
-    assert(discovery.hosts >= 1, 'Expected detected host cards');
+    assert(/Onboarding/i.test(discovery.heading), 'Onboarding heading is missing');
+    assert(/Where should we look/i.test(discovery.scanHeading), 'Scan setup heading is missing');
+    assert(discovery.locations >= 3, 'Expected default scan location rows');
 
     await js(win, `Onboarding.go(2)`);
-    await waitFor(win, `(() => document.querySelectorAll('.onboarding-stat').length >= 4)()`);
-    await js(win, `Onboarding.go(4)`);
-    await waitFor(win, `(() => /Final health check/.test(document.body.innerText))()`);
+    await waitFor(win, `(() => /Build vector index/.test(document.body.innerText))()`);
+    await js(win, `Onboarding.go(3)`);
+    await waitFor(win, `(() => /All set/.test(document.body.innerText))()`);
     await js(
       win,
       `(() => {
-      const buttons = [...document.querySelectorAll('.onboarding-footer .save-btn')];
-      const finish = buttons.find((button) => /Finish setup/.test(button.textContent || ''));
+      const buttons = [...document.querySelectorAll('.ob-actions .save-btn')];
+      const finish = buttons.find((button) => /Go to dashboard/.test(button.textContent || ''));
       if (!finish) throw new Error('Finish setup button missing');
       finish.click();
     })()`,

@@ -24,87 +24,34 @@
   grid-template-columns: var(--side-w-mini) minmax(0, 1fr);
 }
 
-.desktop-titlebar {
-  display: none;
-}
-
-/* Electron mode: title bar becomes a row inside .app, occupying only the
-   right column. Sidebar spans all rows so its border-right is the single,
-   unbroken vertical divider from y=0 to the bottom of the window.
-   The legacy `top` row (48px reserved for a `.topbar` that doesn't exist
-   in this app) is collapsed via `0px` so the title bar sits flush against
-   the main content area — no dead strip between them. */
+/* Electron: reserve top row for native titleBarOverlay controls */
 html[data-runtime='electron'] .app {
   grid-template-rows: var(--desktop-titlebar-h) 0px 1fr;
   grid-template-areas:
-    'side  titlebar'
+    'side  overlay'
     'side  top'
     'side  main';
 }
 
+/* Electron: draggable strip behind the native titlebar overlay controls */
+.desktop-titlebar {
+  display: none;
+}
+
 html[data-runtime='electron'] .desktop-titlebar {
-  grid-area: titlebar;
+  display: block;
+  grid-area: overlay;
+  position: relative;
+  z-index: var(--z-nav);
+  min-height: var(--desktop-titlebar-h);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--s-2) 0 var(--s-4);
-  background: var(--bg-solid);
-  color: var(--text);
-  user-select: none;
 }
 
-/* Empty drag-region anchor on the left of the title bar. No brand text or
-   icon — Windows owns the taskbar identity via app.setAppUserModelId and the
-   .ico set on BrowserWindow. The chrome stays minimal. */
-html[data-runtime='electron'] .desktop-titlebar-brand {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-html[data-runtime='electron'] .desktop-titlebar-actions svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-html[data-runtime='electron'] .desktop-titlebar-actions {
-  -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-1);
-}
-
-html[data-runtime='electron'] .desktop-titlebar-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 24px;
-  color: var(--text-3);
-  border: 1px solid transparent;
-  border-radius: var(--r-1);
-  background: transparent;
-  transition:
-    color var(--out),
-    background var(--out),
-    border-color var(--out);
-}
-
-html[data-runtime='electron'] .desktop-titlebar-actions button:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-  border-color: var(--line-2);
-}
-
-html[data-runtime='electron'] .desktop-titlebar-actions .desktop-titlebar-close:hover {
-  color: var(--err);
-  background: var(--err-bg);
-  border-color: var(--err);
+/* Electron: sidebar brand is the window drag handle */
+html[data-runtime='electron'] .nav-brand {
+  -webkit-app-region: drag;
 }
 
 /* ═════════════ SIDEBAR ═════════════ */

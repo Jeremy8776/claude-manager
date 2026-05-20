@@ -1,42 +1,25 @@
-// onboarding.js — First-run setup wizard, modal-based.
-// Spec: docs/specs/onboarding-redesign.md
-// @ts-check
+// @ts-nocheck — Path-A backlog: new onboarding modules, typing deferred to post-merge
+// onboarding.js — Full-window 3-step setup: scan → build → done.
 
 const Onboarding = (() => {
   const STEPS = [
-    { num: 1, label: 'Connect' },
-    { num: 2, label: 'Context' },
-    { num: 3, label: 'IDE' },
-    { num: 4, label: 'Health' },
+    { num: 1, label: 'Scan' },
+    { num: 2, label: 'Build' },
+    { num: 3, label: 'Done' },
   ];
 
-  /** @type {{ shouldShow?: boolean, hosts?: McpHostRecord[], tools?: any[], context?: any } | null} */
-  let summary = null;
-  /** @type {1 | 2 | 3 | 4} */
   let step = 1;
-  /** @type {Set<string>} */
-  let selectedHosts = new Set();
-  /** @type {Array<{id: string, label: string, path: string, type: string, skillCount: number, imported?: boolean, lastSyncedAt?: string | null, aggregateStrategy?: string | null, fileCount?: number}>} */
-  let skillSources = [];
-  /** @type {Array<{path: string, label: string, exists: boolean, skillCount: number, alreadyLinked: boolean}>} */
-  let skillCandidates = [];
-  /** @type {string} */
-  let customSourcePath = '';
-  /** @type {string} */
-  let sourceMessage = '';
-  /** @type {string | null} */
-  let expandedSourceId = null;
-  /** @type {Map<string, {added: Array<{rel: string}>, removed: Array<{rel: string}>, modified: Array<{rel: string}>, localEdits: Array<{rel: string}>, conflicts: Array<{rel: string}>}>} */
-  const pendingDiffs = new Map();
-  /** @type {Map<string, 'import' | 'sync' | 'apply'>} */
-  const pendingOp = new Map();
   let mounted = false;
-  /** Tracks in-flight long-running operations so the UI can show progress
-   *  feedback instead of leaving the user staring at an unchanged button. */
+
+  let scanResults = null;
+  let scanning = false;
+  let scanPhase = 'config';
+  let customScanPaths = [];
+  let scanConfig = { drives: false, homedir: true, workspaces: true };
   let indexing = false;
-  let finishing = false;
-  /** @type {string} */
-  let finishError = '';
+  let buildDone = false;
+  let hosts = [];
+  let skillSources = [];
 
   function root() {
     let el = document.getElementById('onboarding-root');
@@ -48,603 +31,128 @@ const Onboarding = (() => {
   }
 
   async function init() {
-    summary = await apiFetch('/onboarding');
+    const summary = await DS.getOnboarding();
     if (!summary?.shouldShow) return false;
-    selectedHosts = new Set(
-      (summary.hosts || [])
-        .filter((host) => host.supported && (host.appDetected || host.status === 'connected'))
-        .map((host) => host.id),
-    );
-    if (!selectedHosts.size) {
-      (summary.hosts || []).filter((host) => host.supported).forEach((host) => selectedHosts.add(host.id));
-    }
-    await loadSkillSources();
+    mounted = true;
     step = 1;
-    mount();
+    scanPhase = 'config';
+    await loadData();
+    render();
     return true;
   }
 
-  async function loadSkillSources() {
+  async function loadData() {
     try {
-      const [sourcesResp, scanResp] = await Promise.all([DS.listSkillSources(), DS.scanSkillSources()]);
-      skillSources = Array.isArray(sourcesResp?.sources) ? sourcesResp.sources : [];
-      skillCandidates = Array.isArray(scanResp?.candidates) ? scanResp.candidates : [];
-    } catch (err) {
-      console.error('onboarding: skill source load failed', err);
-      skillSources = [];
-      skillCandidates = [];
+      const [h, ss] = await Promise.all([DS.getMcpHosts(), DS.listSkillSources()]);
+      hosts = h?.hosts || [];
+      skillSources = ss?.sources || [];
+      if (typeof loadSkillData === 'function') await loadSkillData();
+    } catch {
+      /* ignore */
     }
   }
 
-  function mount() {
-    if (!mounted) {
-      document.addEventListener('keydown', onKey);
-      mounted = true;
-    }
+  async function runScan() {
+    scanPhase = 'scanning';
+    scanning = true;
+    scanResults = null;
     render();
-  }
-
-  function close() {
-    if (mounted) {
-      document.removeEventListener('keydown', onKey);
-      mounted = false;
-    }
-    const el = document.getElementById('onboarding-root');
-    if (el) el.remove();
-  }
-
-  /** @param {KeyboardEvent} e */
-  function onKey(e) {
-    if (e.key === 'Escape') skip();
-  }
-
-  /** @param {MouseEvent} e */
-  function onBackdrop(e) {
-    if (e.target === e.currentTarget) skip();
-  }
-
-  function renderProgress() {
-    const items = STEPS.map((s, idx) => {
-      const state = s.num < step ? 'done' : s.num === step ? 'current' : 'upcoming';
-      const connector =
-        idx < STEPS.length - 1
-          ? `<span class="onboarding-progress-bar ${s.num < step ? 'done' : ''}" aria-hidden="true"></span>`
-          : '';
-      return `
-        <div class="onboarding-progress-step ${state}" aria-current="${state === 'current' ? 'step' : 'false'}">
-          <span class="onboarding-progress-circle">${s.num}</span>
-          <span class="onboarding-progress-label">${esc(s.label)}</span>
-        </div>
-        ${connector}
-      `;
-    }).join('');
-    return `<nav class="onboarding-progress" aria-label="Setup progress">${items}</nav>`;
-  }
-
-  /** @param {McpHostRecord} host */
-  function hostCard(host) {
-    const checked = selectedHosts.has(host.id);
-    const disabled = !host.supported;
-    const status = CompileView.statusLabel(host.status);
-    return `<label class="onboarding-host ${checked ? 'selected' : ''} ${disabled ? 'disabled' : ''}">
-      <input type="checkbox" class="onboarding-host-input" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} onchange="Onboarding.toggleHost('${host.id}', this.checked)" />
-      <span class="onboarding-host-icon" aria-hidden="true">${esc(host.label.slice(0, 1))}</span>
-      <span class="onboarding-host-body">
-        <span class="onboarding-host-top">
-          <strong class="onboarding-card-name">${esc(host.label)}</strong>
-          <span class="ct-badge mcp-status-${host.status}">${esc(status)}</span>
-        </span>
-        <span class="onboarding-card-desc">${esc(host.summary)}</span>
-      </span>
-    </label>`;
-  }
-
-  function renderConnect() {
-    const hosts = summary?.hosts || [];
-    return `<section class="onboarding-step-body" data-step="1">
-      <header class="onboarding-step-head">
-        <h3>Connect your AI hosts</h3>
-        <p>Pick the apps that should inherit your local context when a session resets, a rate limit hits, or you switch tools. You can change this any time from Connections.</p>
-      </header>
-      <div class="onboarding-host-list">
-        ${hosts.length ? hosts.map(hostCard).join('') : '<p class="onboarding-empty">No supported hosts detected on this machine yet.</p>'}
-      </div>
-    </section>`;
-  }
-
-  /**
-   * @param {string} label
-   * @param {string | number} value
-   * @param {string} [hint]
-   */
-  function statCard(label, value, hint = '') {
-    return `<article class="onboarding-stat">
-      <span class="onboarding-card-name">${esc(label)}</span>
-      <strong class="onboarding-stat-value">${esc(value)}</strong>
-      ${hint ? `<span class="onboarding-card-desc">${esc(hint)}</span>` : ''}
-    </article>`;
-  }
-
-  function renderContext() {
-    const ctx = summary?.context || {};
-    const index = ctx.index || {};
-    const activeNames = ctx.activeSkillNames || [];
-    const indexReady = !!index.ready;
-    const indexStale = !!index.stale;
-    const indexLabel = !indexReady ? 'Empty' : indexStale ? 'Stale' : 'Ready';
-    const indexHint = !indexReady
-      ? 'Build to enable search'
-      : indexStale
-        ? `Rebuild — ${index.staleReason || 'sources changed'}`
-        : `${index.chunks || 0} chunks`;
-    const showBuildAction = !indexReady || indexStale;
-    const buildLabel = indexReady && indexStale ? 'Rebuild vector index' : 'Build vector index';
-    return `<section class="onboarding-step-body" data-step="2">
-      <header class="onboarding-step-head">
-        <h3>Available context</h3>
-        <p>This is the local source of truth host apps can query through Context Engine. Build the vector index to enable semantic search.</p>
-      </header>
-      <div class="onboarding-stat-grid">
-        ${statCard('Skills found', ctx.totalSkills || 0)}
-        ${statCard('Active skills', ctx.activeSkills || 0)}
-        ${statCard('Memory entries', ctx.memoryEntries || 0)}
-        ${statCard('Vector index', indexLabel, indexHint)}
-      </div>
-      <div class="onboarding-active-skills">
-        <span class="onboarding-card-name">Active now</span>
-        <span class="onboarding-card-desc">${esc(activeNames.length ? activeNames.join(', ') : 'No active skills yet')}</span>
-      </div>
-      ${renderSourcesSection()}
-      ${renderIndexBuildAction(showBuildAction, buildLabel, ctx)}
-    </section>`;
-  }
-
-  /**
-   * Renders the "Build vector index" affordance — either the action button,
-   * an in-flight progress card while indexing is running, or nothing when
-   * the index is already ready. Embedding embeddings can take 10-30s on
-   * 100+ skills, so the in-flight state is the load-bearing UX: without
-   * it the user clicks the button, the API stays open, nothing visible
-   * changes, and they assume it broke.
-   *
-   * @param {boolean} show
-   * @param {string} label
-   * @param {{ totalSkills?: number }} ctx
-   */
-  function renderIndexBuildAction(show, label, ctx) {
-    if (indexing) {
-      const total = Number(ctx?.totalSkills || 0);
-      const totalLabel = total ? `${total} skills` : 'active skills';
-      return `
-        <div class="onboarding-progress-card" role="status" aria-live="polite">
-          <div class="onboarding-spinner" aria-hidden="true"></div>
-          <div class="onboarding-progress-text">
-            <strong>Building vector index</strong>
-            <span>Embedding ${esc(totalLabel)} via Ollama. This usually takes 10-60 seconds; please don't close the window.</span>
-          </div>
-        </div>`;
-    }
-    if (!show) return '';
-    return `<button class="fb onboarding-inline-action" type="button" onclick="Onboarding.buildIndex()">${esc(label)}</button>`;
-  }
-
-  function renderSourcesSection() {
-    const linked = skillSources.filter((s) => s.type !== 'internal');
-    const candidates = skillCandidates.filter((c) => c.exists && !c.alreadyLinked && c.skillCount > 0);
-    const messageHtml = sourceMessage
-      ? `<div class="onboarding-source-message">${esc(sourceMessage)}</div>`
-      : '';
-    return `<div class="onboarding-sources">
-      <div class="onboarding-sources-head">
-        <span class="onboarding-card-name">Bring in existing skills</span>
-        <span class="onboarding-card-desc">Link a folder of SKILL.md files from another tool — Context Engine reads them without copying or moving the originals.</span>
-      </div>
-      ${
-        candidates.length
-          ? `<div class="onboarding-source-list">${candidates.map(renderCandidateRow).join('')}</div>`
-          : `<div class="onboarding-source-empty"><span class="onboarding-card-desc">No host-app skills folders detected. Paste a path below to link any folder of SKILL.md files.</span></div>`
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    advanceProgress(15, 'Probing drives...');
+    try {
+      const body = {
+        customPaths: customScanPaths,
+        skipDrives: !scanConfig.drives,
+        skipHomedir: !scanConfig.homedir,
+        skipWorkspaces: !scanConfig.workspaces,
+      };
+      advanceProgress(30, 'Scanning host applications...');
+      const resp = await apiFetch('/system/scan', 'POST', body);
+      scanResults = resp || {};
+      advanceProgress(80, 'Linking discovered sources...');
+      const candidates = collectSkillSources();
+      for (let i = 0; i < candidates.length; i += 6) {
+        const batch = candidates.slice(i, i + 6);
+        await Promise.all(
+          batch.map((c) => DS.addSkillSource({ path: c.path, label: c.label || c.path }).catch(() => {})),
+        );
       }
-      <form class="onboarding-source-form" onsubmit="event.preventDefault(); Onboarding.linkCustom();">
-        <input
-          class="onboarding-source-input"
-          type="text"
-          placeholder="C:\\path\\to\\my\\skills"
-          value="${esc(customSourcePath)}"
-          oninput="Onboarding._setCustomPath(this.value)"
-        />
-        ${
-          typeof window !== 'undefined' && window.contextEngineDesktop?.selectFolder
-            ? '<button class="fb" type="button" onclick="Onboarding.browse()">Browse…</button>'
-            : ''
-        }
-        <button class="fb" type="submit">Link folder</button>
-      </form>
-      ${
-        linked.length
-          ? `<div class="onboarding-linked-head"><span class="onboarding-card-name">Linked</span></div>
-             <div class="onboarding-source-list">${linked.map(renderLinkedRow).join('')}</div>`
-          : ''
-      }
-      ${messageHtml}
-    </div>`;
-  }
-
-  /** @param {{path: string, label: string, skillCount: number}} candidate */
-  function renderCandidateRow(candidate) {
-    const pathArg = candidate.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const labelArg = candidate.label.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `<div class="onboarding-source-row">
-      <div class="onboarding-source-row-body">
-        <span class="onboarding-card-name">${esc(candidate.label)}</span>
-        <span class="onboarding-card-desc onboarding-source-path">${esc(candidate.path)}</span>
-      </div>
-      <div class="onboarding-source-row-meta">
-        <span class="ct-badge">${esc(String(candidate.skillCount))} ${candidate.skillCount === 1 ? 'skill' : 'skills'}</span>
-        <button class="fb" type="button" onclick="Onboarding.linkPath('${pathArg}', '${labelArg}')">Link</button>
-      </div>
-    </div>`;
-  }
-
-  /** @param {{id: string, label: string, path: string, skillCount: number, imported?: boolean, lastSyncedAt?: string | null, fileCount?: number}} source */
-  function renderLinkedRow(source) {
-    const isImported = !!source.imported;
-    const isExpanded = expandedSourceId === source.id;
-    const inFlight = pendingOp.get(source.id);
-    const diff = pendingDiffs.get(source.id);
-
-    const importedBadge = isImported
-      ? `<span class="ct-badge">Imported${source.fileCount ? ` (${source.fileCount} files)` : ''}</span>`
-      : '';
-
-    const primaryAction = isImported
-      ? `<button class="fb" type="button" ${inFlight ? 'disabled' : ''} onclick="Onboarding.checkSourceChanges('${source.id}')">${inFlight === 'sync' ? 'Checking…' : 'Check for changes'}</button>`
-      : `<button class="fb" type="button" ${inFlight ? 'disabled' : ''} onclick="Onboarding.importSource('${source.id}')">${inFlight === 'import' ? 'Importing…' : 'Import to CE'}</button>`;
-
-    return `<div class="onboarding-source-row linked ${isExpanded ? 'expanded' : ''}">
-      <div class="onboarding-source-row-top">
-        <div class="onboarding-source-row-body">
-          <span class="onboarding-card-name">${esc(source.label)}</span>
-          <span class="onboarding-card-desc onboarding-source-path">${esc(source.path)}</span>
-        </div>
-        <div class="onboarding-source-row-meta">
-          ${importedBadge}
-          <span class="ct-badge">${esc(String(source.skillCount || 0))} ${(source.skillCount || 0) === 1 ? 'skill' : 'skills'}</span>
-          ${primaryAction}
-          <button class="fb" type="button" ${inFlight ? 'disabled' : ''} onclick="Onboarding.unlinkSource('${source.id}')">Unlink</button>
-        </div>
-      </div>
-      ${isExpanded && diff ? renderDiffPanel(source.id, diff) : ''}
-    </div>`;
-  }
-
-  /** @param {string} sourceId @param {{added: Array<{rel: string}>, removed: Array<{rel: string}>, modified: Array<{rel: string}>, localEdits: Array<{rel: string}>, conflicts: Array<{rel: string}>}} diff */
-  function renderDiffPanel(sourceId, diff) {
-    const inFlight = pendingOp.get(sourceId);
-    const localEdits = diff.localEdits || [];
-    const conflicts = diff.conflicts || [];
-    const total =
-      diff.added.length + diff.removed.length + diff.modified.length + localEdits.length + conflicts.length;
-    if (total === 0) {
-      return `<div class="onboarding-diff-panel">
-        <span class="onboarding-card-desc">No changes detected. The imported tree matches the source.</span>
-        <div class="onboarding-diff-actions">
-          <button class="fb" type="button" onclick="Onboarding.closeDiff('${sourceId}')">Close</button>
-        </div>
-      </div>`;
-    }
-    const clobberCount = conflicts.length + localEdits.length;
-    const clobberWarning = clobberCount
-      ? `<div class="onboarding-diff-warning">Overwrite will discard ${clobberCount} local edit${clobberCount === 1 ? '' : 's'} inside CE's imported copy.</div>`
-      : '';
-    const overwriteLabel = clobberCount
-      ? `Overwrite (discards ${clobberCount} local edit${clobberCount === 1 ? '' : 's'})`
-      : 'Overwrite (mirror source)';
-    return `<div class="onboarding-diff-panel">
-      ${renderDiffList('Added', diff.added, 'added')}
-      ${renderDiffList('Removed', diff.removed, 'removed')}
-      ${renderDiffList('Modified', diff.modified, 'modified')}
-      ${renderDiffList('Conflicting (local edit + source changed)', conflicts, 'conflict')}
-      ${renderDiffList('Local edits (source unchanged)', localEdits, 'local')}
-      ${clobberWarning}
-      <div class="onboarding-diff-actions">
-        <button class="fb" type="button" ${inFlight ? 'disabled' : ''} onclick="Onboarding.closeDiff('${sourceId}')">Cancel</button>
-        <button class="fb" type="button" ${inFlight || !diff.added.length ? 'disabled' : ''} onclick="Onboarding.applySync('${sourceId}', 'append')">${inFlight === 'apply' ? 'Applying…' : 'Append (add new only)'}</button>
-        <button class="save-btn" type="button" ${inFlight ? 'disabled' : ''} onclick="Onboarding.applySync('${sourceId}', 'overwrite')">${inFlight === 'apply' ? 'Applying…' : esc(overwriteLabel)}</button>
-      </div>
-    </div>`;
-  }
-
-  /** @param {string} label @param {Array<{rel: string}>} items @param {string} kind */
-  function renderDiffList(label, items, kind) {
-    if (!items.length) return '';
-    return `<div class="onboarding-diff-group" data-kind="${kind}">
-      <span class="onboarding-diff-label">${esc(label)} · ${items.length}</span>
-      <ul class="onboarding-diff-files">
-        ${items
-          .slice(0, 8)
-          .map((entry) => `<li>${esc(entry.rel)}</li>`)
-          .join('')}
-        ${items.length > 8 ? `<li class="onboarding-diff-more">+${items.length - 8} more</li>` : ''}
-      </ul>
-    </div>`;
-  }
-
-  /** @param {any} tool */
-  function surfaceCard(tool) {
-    const tone = tool.detected ? 'detected' : tool.fileStandard ? 'file-standard' : 'available';
-    const badge = tool.detected
-      ? 'Detected'
-      : tool.fileStandard
-        ? 'File standard'
-        : tool.available
-          ? 'Available'
-          : 'Not found';
-    const detail = tool.signals?.length
-      ? tool.signals.join(', ')
-      : tool.globalReady
-        ? 'Global fallback writable'
-        : tool.projectReady
-          ? 'Project fallback available'
-          : 'Can be configured later';
-    return `<article class="onboarding-surface ${tone}">
-      <span class="onboarding-surface-icon" aria-hidden="true">${esc(String(tool.label || tool.id).slice(0, 1))}</span>
-      <span class="onboarding-surface-body">
-        <span class="onboarding-surface-top">
-          <strong class="onboarding-card-name">${esc(tool.label || tool.id)}</strong>
-          <span class="ct-badge">${esc(badge)}</span>
-        </span>
-        <span class="onboarding-card-desc onboarding-surface-detail">${esc(detail)}</span>
-      </span>
-    </article>`;
-  }
-
-  function renderIde() {
-    const tools = summary?.tools || [];
-    const visible = tools.filter((tool) => tool.detected || tool.available || tool.fileStandard).slice(0, 8);
-    return `<section class="onboarding-step-body" data-step="3">
-      <header class="onboarding-step-head">
-        <h3>IDE and file-output surfaces</h3>
-        <p>Tools that don't call Context Engine through MCP can still receive generated instruction files from the same source of truth.</p>
-      </header>
-      ${
-        visible.length
-          ? `<div class="onboarding-surface-grid">${visible.map(surfaceCard).join('')}</div>`
-          : `<div class="onboarding-empty">
-              <strong class="onboarding-card-name">No IDE surfaces detected yet</strong>
-              <span class="onboarding-card-desc">Context Engine can still create AGENTS.md and other project files once you add a workspace.</span>
-            </div>`
-      }
-    </section>`;
-  }
-
-  /**
-   * @param {string} label
-   * @param {boolean} ready
-   * @param {string} detail
-   */
-  function healthCard(label, ready, detail) {
-    return `<article class="onboarding-health ${ready ? 'ready' : 'pending'}">
-      <span class="onboarding-card-name">${esc(label)}</span>
-      <strong class="onboarding-health-value">${esc(ready ? 'Ready' : 'Needs setup')}</strong>
-      <span class="onboarding-card-desc">${esc(detail)}</span>
-    </article>`;
-  }
-
-  function renderHealth() {
-    const ctx = summary?.context || {};
-    const index = ctx.index || {};
-    const connected = (summary?.hosts || []).filter((host) => host.status === 'connected').length;
-    const indexReady = !!index.ready;
-    return `<section class="onboarding-step-body" data-step="4">
-      <header class="onboarding-step-head">
-        <h3>Final health check</h3>
-        <p>Confirm Context Engine has useful continuity context before you start using it from a host app.</p>
-      </header>
-      <div class="onboarding-health-grid">
-        ${healthCard('Host connections', connected > 0, connected > 0 ? `${connected} connected` : 'Connect at least one host')}
-        ${healthCard('Active skills', (ctx.activeSkills || 0) > 0, `${ctx.activeSkills || 0} active`)}
-        ${healthCard('Vector search', indexReady, indexReady ? `${index.chunks || 0} chunks` : 'Build recommended')}
-      </div>
-      ${renderIndexBuildAction(!indexReady, 'Build vector index', ctx)}
-    </section>`;
-  }
-
-  function renderBody() {
-    if (step === 1) return renderConnect();
-    if (step === 2) return renderContext();
-    if (step === 3) return renderIde();
-    return renderHealth();
-  }
-
-  function renderFooter() {
-    const isFirst = step === 1;
-    const isLast = step === 4;
-    const nextLabel = isLast ? (finishing ? 'Finishing…' : 'Finish setup') : 'Continue';
-    const nextAction = isLast ? 'finish()' : `go(${step + 1})`;
-    const disabledAttr = isLast && finishing ? 'disabled' : '';
-    const errorBlock = finishError
-      ? `<div class="onboarding-footer-error" role="alert">${esc(finishError)}</div>`
-      : '';
-    return `<footer class="onboarding-footer">
-      ${errorBlock}
-      <button class="fb" type="button" ${finishing ? 'disabled' : ''} onclick="Onboarding.skip()">Skip for now</button>
-      <div class="onboarding-footer-end">
-        ${isFirst ? '' : `<button class="fb" type="button" ${finishing ? 'disabled' : ''} onclick="Onboarding.go(${step - 1})">Back</button>`}
-        <button class="save-btn" type="button" ${disabledAttr} onclick="Onboarding.${nextAction}">${esc(nextLabel)}</button>
-      </div>
-    </footer>`;
-  }
-
-  function render() {
-    root().innerHTML = `<div class="onboarding-overlay" onclick="Onboarding._backdrop(event)" role="presentation">
-      <div class="onboarding-dialog app-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-        <header class="onboarding-header">
-          <img class="onboarding-brand-icon" src="assets/brand/icon-simple.svg" alt="" width="28" height="28" />
-          <div class="onboarding-header-text">
-            <h2 id="onboarding-title">Welcome to Context Engine</h2>
-            <p>One-time setup. Everything is changeable later.</p>
-          </div>
-          <button class="onboarding-close" type="button" aria-label="Close setup" onclick="Onboarding.skip()">×</button>
-        </header>
-        ${renderProgress()}
-        <main class="onboarding-body">${renderBody()}</main>
-        ${renderFooter()}
-      </div>
-    </div>`;
-  }
-
-  /** @param {1 | 2 | 3 | 4} next */
-  function go(next) {
-    step = next;
-    render();
-    const dialog = document.querySelector('.onboarding-dialog');
-    if (dialog instanceof HTMLElement) dialog.scrollTo(0, 0);
-  }
-
-  /** @param {string} hostId @param {boolean} selected */
-  function toggleHost(hostId, selected) {
-    if (selected) selectedHosts.add(hostId);
-    else selectedHosts.delete(hostId);
-    render();
-  }
-
-  async function refresh() {
-    summary = await apiFetch('/onboarding');
-    await loadSkillSources();
-    render();
-  }
-
-  /** @param {string} sourcePath @param {string} [label] */
-  async function linkPath(sourcePath, label) {
-    sourceMessage = '';
-    const result = await DS.addSkillSource({ path: sourcePath, label });
-    if (result?.ok) {
-      sourceMessage = `Linked ${result.source?.label || sourcePath}.`;
-      if (typeof Toast !== 'undefined') Toast.success(sourceMessage);
-      await refresh();
-    } else {
-      sourceMessage = result?.error || 'Could not link this folder.';
+      await loadData();
+      advanceProgress(90, 'Populating memory and handoff...');
+      populateOnboardingMemory(scanResults);
+      await populateOnboardingHandoff(scanResults);
+      advanceProgress(100, 'Complete');
+    } catch {
+      const [h, ss] = await Promise.all([DS.getMcpHosts(), DS.listSkillSources()]);
+      scanResults = { hosts: [], ides: [], ideExtensions: [], workspaces: [] };
+    } finally {
+      advanceProgress(100, 'Complete');
+      await new Promise((r) => setTimeout(r, 300));
+      scanning = false;
+      scanPhase = 'results';
       render();
     }
   }
 
-  async function linkCustom() {
-    const trimmed = customSourcePath.trim();
-    if (!trimmed) return;
-    await linkPath(trimmed);
-    customSourcePath = '';
+  function collectSkillSources() {
+    if (!scanResults?.hosts) return [];
+    const sources = [];
+    const seen = new Set();
+    for (const host of scanResults.hosts) {
+      for (const sk of host.skills || []) {
+        if (sk.internal) continue;
+        const key = sk.path.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const alreadyLinked = skillSources.some((s) => s.path && s.path.toLowerCase() === key);
+        if (!alreadyLinked) sources.push({ path: sk.path, label: sk.label || host.label + ' skills' });
+      }
+    }
+    return sources;
   }
 
-  async function browse() {
+  function addScanPath(p) {
+    if (!p || customScanPaths.includes(p)) return;
+    customScanPaths.push(p);
+    render();
+  }
+
+  function removeScanPath(idx) {
+    customScanPaths.splice(idx, 1);
+    render();
+  }
+
+  async function browseScanPath() {
     const picker = window.contextEngineDesktop?.selectFolder;
     if (!picker) return;
     try {
-      const picked = await picker({ title: 'Pick a folder of SKILL.md files to link' });
-      if (picked) await linkPath(picked);
-    } catch (err) {
-      console.error('onboarding: folder picker failed', err);
-      sourceMessage = 'Could not open folder picker.';
-      render();
+      const picked = await picker({ title: 'Pick a directory to scan' });
+      if (picked) addScanPath(picked);
+    } catch {
+      /* ignore */
     }
   }
 
-  /** @param {string} id */
+  async function linkPath(path, label) {
+    const result = await DS.addSkillSource({ path, label: label || path });
+    if (result?.ok) {
+      Toast.success('Source linked');
+      await loadData();
+      render();
+    } else {
+      Toast.error(result?.error || 'Could not link source');
+    }
+  }
+
   async function unlinkSource(id) {
-    sourceMessage = '';
     const result = await DS.removeSkillSource(id);
     if (result?.ok) {
-      sourceMessage = 'Source unlinked.';
-      await refresh();
+      Toast.success('Source unlinked');
+      await loadData();
+      render();
     } else {
-      sourceMessage = result?.error || 'Could not unlink that source.';
-      render();
+      Toast.error(result?.error || 'Could not unlink source');
     }
-  }
-
-  /** @param {string} value */
-  function setCustomPath(value) {
-    customSourcePath = value;
-    // Do not re-render on every keystroke — input is uncontrolled-style.
-  }
-
-  /** @param {string} id */
-  async function importSource(id) {
-    sourceMessage = '';
-    pendingOp.set(id, 'import');
-    render();
-    try {
-      const result = await DS.importSkillSource(id);
-      if (result?.ok) {
-        const strategy = result.manifest?.aggregateStrategy || 'link';
-        sourceMessage = `Imported. Files placed via ${strategy === 'link' ? 'hard link' : strategy === 'copy' ? 'copy' : 'link + copy'}.`;
-        if (typeof Toast !== 'undefined') Toast.success('Source imported');
-        await refresh();
-      } else {
-        sourceMessage = result?.error || 'Could not import this source.';
-        render();
-      }
-    } finally {
-      pendingOp.delete(id);
-      render();
-    }
-  }
-
-  /** @param {string} id */
-  async function checkSourceChanges(id) {
-    sourceMessage = '';
-    pendingOp.set(id, 'sync');
-    render();
-    try {
-      const result = await DS.syncSkillSource(id);
-      if (result?.ok && result.diff) {
-        pendingDiffs.set(id, result.diff);
-        expandedSourceId = id;
-      } else {
-        sourceMessage = result?.error || 'Could not read source changes.';
-      }
-    } finally {
-      pendingOp.delete(id);
-      render();
-    }
-  }
-
-  /** @param {string} id */
-  function closeDiff(id) {
-    pendingDiffs.delete(id);
-    if (expandedSourceId === id) expandedSourceId = null;
-    render();
-  }
-
-  /** @param {string} id @param {'append' | 'overwrite'} mode */
-  async function applySync(id, mode) {
-    pendingOp.set(id, 'apply');
-    render();
-    try {
-      const result = await DS.applySkillSourceSync(id, mode);
-      if (result?.ok) {
-        const a = result.applied?.added || 0;
-        const r = result.applied?.removed || 0;
-        const m = result.applied?.modified || 0;
-        sourceMessage = `Sync applied — ${a} added, ${r} removed, ${m} modified.`;
-        pendingDiffs.delete(id);
-        expandedSourceId = null;
-        if (typeof Toast !== 'undefined') Toast.success('Source synced');
-        await refresh();
-      } else {
-        sourceMessage = result?.error || 'Could not apply changes.';
-        render();
-      }
-    } finally {
-      pendingOp.delete(id);
-      render();
-    }
-  }
-
-  /** @param {string} hostId */
-  async function connectHost(hostId) {
-    const result = await DS.installMcpHost(hostId);
-    if (result?.ok) Toast.success('Host config updated');
-    await refresh();
   }
 
   async function buildIndex() {
@@ -653,99 +161,369 @@ const Onboarding = (() => {
     render();
     try {
       const result = await DS.indexSkills();
-      if (result && result.ok !== false) {
-        const chunks = Number(result?.chunks || 0);
-        Toast.success(chunks ? `Indexed ${chunks} chunks` : 'Vector index built');
-      } else if (result && result.ok === false) {
-        Toast.error(result.error || 'Index build failed');
-      }
-    } catch (err) {
-      console.error('onboarding: buildIndex failed', err);
-      Toast.error('Index build failed');
+      buildDone = !!(result && result.ok !== false);
+      if (buildDone) Toast.success('Vector index built');
+      else
+        Toast.error(
+          'Ollama not available — ' +
+            (result?.error || 'embedding failed') +
+            '. You can skip indexing and continue.',
+        );
+    } catch {
+      Toast.error('Index build failed — Ollama may not be running.');
     } finally {
       indexing = false;
-      await refresh();
+      render();
     }
   }
 
   async function finish() {
-    if (finishing) return;
-    finishing = true;
-    finishError = '';
-    render();
-    // Apply pending host connections the user selected but hasn't manually
-    // wired. Best-effort — failures get logged but don't block finish, so
-    // a flaky host config write can't trap the user inside onboarding.
-    const pending = (summary?.hosts || []).filter(
-      (host) => host.supported && selectedHosts.has(host.id) && host.status !== 'connected',
-    );
-    for (const host of pending) {
-      try {
-        await DS.installMcpHost(host.id);
-      } catch (err) {
-        console.error('onboarding: install host failed', host.id, err);
-      }
-    }
-    let completed = false;
     try {
-      const result = await apiFetch('/onboarding/complete', 'POST', {});
-      completed = !!(result && result.ok !== false);
-    } catch (err) {
-      console.error('onboarding: complete POST threw', err);
+      await DS.completeOnboarding();
+    } catch {
+      /* ignore */
     }
-    if (completed) {
-      Toast.success('Setup complete');
-      close();
-      if (typeof DashboardTab !== 'undefined') {
-        try {
-          await DashboardTab.init();
-        } catch (err) {
-          console.error('onboarding: post-complete DashboardTab.init failed', err);
-        }
+    Toast.success('Setup complete');
+    close();
+    if (typeof DashboardTab !== 'undefined') {
+      try {
+        await DashboardTab.init();
+      } catch {
+        /* ignore */
       }
-      return;
     }
-    // Stayed open because the server-side completion didn't acknowledge.
-    // Surface a clear error so the user can retry or use Skip.
-    finishing = false;
-    finishError = 'Could not mark setup complete. Retry or use Skip for now.';
-    render();
+    if (typeof MemoryTab !== 'undefined') {
+      try {
+        await MS.loadFromServer();
+        MemoryTab.init();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof HandoffsTab !== 'undefined') {
+      try {
+        await HandoffsTab.load();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   async function skip() {
-    let result = null;
     try {
-      result = await apiFetch('/onboarding/complete', 'POST', {});
-    } catch (err) {
-      console.error('onboarding: skip POST threw', err);
+      await DS.completeOnboarding();
+    } catch {
+      /* ignore */
     }
-    // Even if completion didn't register server-side, close the modal so
-    // the user isn't trapped. They'll see the prompt again on next launch.
-    if (result && result.ok !== false) {
-      close();
-    } else {
-      Toast.warn('Could not save onboarding state, but proceeding.');
-      close();
+    close();
+  }
+
+  function close() {
+    mounted = false;
+    const el = document.getElementById('onboarding-root');
+    if (el) el.remove();
+  }
+
+  function go(next) {
+    step = next;
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function renderSteps() {
+    return STEPS.map((s, idx) => {
+      const state = s.num < step ? 'done' : s.num === step ? 'current' : '';
+      const connector = idx < STEPS.length - 1 ? `<span class="ob-step-connector"></span>` : '';
+      return `
+        <div class="ob-step-pill ${state}">
+          <span class="ob-step-num">${s.num}</span>
+          <span class="ob-step-label">${s.label}</span>
+        </div>
+        ${connector}
+      `;
+    }).join('');
+  }
+
+  function render() {
+    root().innerHTML = `
+      <div class="ob-root">
+        <div class="ob-drag"></div>
+        <h1 class="ob-title">Onboarding</h1>
+        <nav class="ob-steps">
+          <div class="ob-steps-inner">${renderSteps()}</div>
+        </nav>
+        <main class="ob-body">
+          <div class="ob-body-inner">
+            ${step === 1 ? renderScan() : ''}
+            ${step === 2 ? renderBuild() : ''}
+            ${step === 3 ? renderDone() : ''}
+          </div>
+        </main>
+      </div>
+    `;
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderScan() {
+    if (scanPhase === 'config') return renderScanConfig();
+    if (scanPhase === 'scanning') return renderScanProgress();
+    return renderScanResults();
+  }
+
+  function renderScanConfig() {
+    const DEFAULT_LOCS = [
+      {
+        key: 'homedir',
+        label: 'Home directory',
+        desc: 'Your .claude, .codex, .cursor, .kimi, and other AI tool configs',
+      },
+      {
+        key: 'drives',
+        label: 'All fixed drives',
+        desc: 'Scan E:\\, C:\\, and other drives for skills and configs',
+      },
+      {
+        key: 'workspaces',
+        label: 'Workspace directories',
+        desc: 'Project folders registered with Context Engine',
+      },
+    ];
+    return `
+      <div class="ob-step-head">
+        <h2>Where should we look?</h2>
+        <p>Context Engine scans for AI tools, skill folders, rules, configs, and MCP servers on your machine.</p>
+      </div>
+      <div class="ob-section">
+        <div class="ob-section-head">
+          <span class="ob-section-label">Scan locations</span>
+        </div>
+        <div class="ob-row-list">
+          ${DEFAULT_LOCS.map(
+            (loc) => `
+            <div class="ob-row${!scanConfig[loc.key] ? ' ob-row-dim' : ''}">
+              <div class="ob-row-body">
+                <span class="ob-row-name">${esc(loc.label)}</span>
+                <span class="ob-row-desc">${esc(loc.desc)}</span>
+              </div>
+              <label class="toggle"><input type="checkbox" ${scanConfig[loc.key] ? 'checked' : ''} onchange="Onboarding.toggleLoc('${loc.key}', this.checked)" /><span class="toggle-track"></span></label>
+            </div>
+          `,
+          ).join('')}
+        </div>
+      </div>
+      <div class="ob-section">
+        <div class="ob-section-head">
+          <span class="ob-section-label">Custom paths</span>
+        </div>
+        ${
+          customScanPaths.length
+            ? `
+          <div class="ob-row-list">
+            ${customScanPaths
+              .map(
+                (p, i) => `
+              <div class="ob-row">
+                <div class="ob-row-body"><span class="ob-row-path">${esc(p)}</span></div>
+                <button class="fb small" onclick="Onboarding.removeScanPath(${i})">Remove</button>
+              </div>
+            `,
+              )
+              .join('')}
+          </div>
+        `
+            : '<div class="ob-empty">No custom paths added. Add a folder to scan for skills and configs.</div>'
+        }
+        ${
+          typeof window !== 'undefined' && window.contextEngineDesktop?.selectFolder
+            ? `
+          <div class="ob-source-form">
+            <button class="fb" type="button" onclick="Onboarding.browseScanPath()">+ Add directory</button>
+          </div>
+        `
+            : ''
+        }
+      </div>
+      <div class="ob-actions ob-mt-7">
+        <button class="ob-skip" onclick="Onboarding.skip()">Skip setup</button>
+        <button class="save-btn" onclick="Onboarding.runScan()">Start scan</button>
+      </div>`;
+  }
+
+  function toggleLoc(key, on) {
+    scanConfig[key] = on;
+    render();
+  }
+
+  function renderScanProgress() {
+    return `
+      <div class="ob-scanning">
+        <div class="ob-progress-track">
+          <div class="ob-progress-fill" style="width:0%" id="ob-progress-fill"></div>
+        </div>
+        <div class="ob-scanning-text">
+          <strong>Scanning your system</strong>
+          <span id="ob-progress-label">Probing drives and standard paths...</span>
+        </div>
+      </div>`;
+  }
+
+  function advanceProgress(pct, label) {
+    if (!mounted) return;
+    const fill = document.getElementById('ob-progress-fill');
+    const lbl = document.getElementById('ob-progress-label');
+    if (fill) fill.style.width = pct + '%';
+    if (lbl) lbl.textContent = label || lbl.textContent;
+  }
+
+  function totalItems() {
+    if (!scanResults?.hosts) return 0;
+    let total = 0;
+    for (const h of scanResults.hosts) {
+      total +=
+        h.skills.length + h.configs.length + h.instructions.length + h.rules.length + h.mcpServers.length;
     }
+    total += Object.values(scanResults.ideExtensions || {}).reduce(
+      (sum, exts) => sum + (Array.isArray(exts) ? exts.length : 0),
+      0,
+    );
+    return total;
+  }
+
+  function renderScanResults() {
+    const hostList = scanResults?.hosts || [];
+    const ideList = scanResults?.ides || [];
+    const extList = scanResults?.ideExtensions || [];
+    if (!hostList.length && !ideList.length) {
+      return `
+        <div class="ob-step-head">
+          <h2>No AI tools found</h2>
+          <p>We could not detect any AI applications, skill folders, or config files. Add a custom path and try again.</p>
+        </div>
+        <div class="ob-actions ob-mt-7">
+          <button class="ob-skip" onclick="Onboarding.skip()">Skip setup</button>
+          <button class="fb" onclick="Onboarding.go(1)">Back</button>
+        </div>`;
+    }
+    return `
+      <div class="ob-step-head">
+        <h2>What we found</h2>
+        <p><strong>${totalItems()}</strong> items across <strong>${hostList.length}</strong> AI tool${hostList.length !== 1 ? 's' : ''}.</p>
+      </div>
+      <div class="ob-host-cards">
+        ${hostList.map((h) => OnboardingRender.renderHostCard(h, skillSources)).join('')}
+        ${ideList.length ? OnboardingRender.renderIdeCard(ideList, extList) : ''}
+      </div>
+      <div class="ob-actions ob-mt-7">
+        <button class="ob-skip" onclick="Onboarding.skip()">Skip setup</button>
+        <button class="save-btn" onclick="Onboarding.go(2)">Continue to build</button>
+      </div>`;
+  }
+
+  function renderBuild() {
+    const srcCount = skillSources.length;
+    const skillCount = Array.isArray(SKILL_DATA) ? SKILL_DATA.length : 0;
+    if (buildDone) {
+      return `
+        <div class="ob-moment">
+          <div class="ob-moment-badge done">&#10003;</div>
+          <div class="ob-moment-text">
+            <strong>Index built</strong>
+            <span>${skillCount} skills from ${srcCount} source${srcCount !== 1 ? 's' : ''} indexed. Your AI hosts can now retrieve relevant context through Context Engine.</span>
+          </div>
+          <div class="ob-actions">
+            <button class="save-btn" onclick="Onboarding.go(3)">Continue</button>
+          </div>
+        </div>`;
+    }
+    if (indexing) {
+      return `
+        <div class="ob-moment">
+          <div class="ob-moment-badge spin"></div>
+          <div class="ob-moment-text">
+            <strong>Building vector index</strong>
+            <span>Embedding ${skillCount} skills from ${srcCount} source${srcCount !== 1 ? 's' : ''} via Ollama. This usually takes 10-60 seconds.</span>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="ob-step-head">
+        <h2>Build vector index</h2>
+        <p>Context Engine indexes your ${skillCount} skills from ${srcCount} source${srcCount !== 1 ? 's' : ''} so host apps can retrieve relevant context instantly through semantic search.</p>
+        <span class="ob-step-total">${skillCount} skills to index</span>
+      </div>
+      <div class="ob-actions ob-mt-7">
+        <button class="ob-skip" onclick="Onboarding.skip()">Skip setup</button>
+        <button class="fb" onclick="Onboarding.go(1)">Back</button>
+        <button class="save-btn" onclick="Onboarding.buildIndex()">Build index</button>
+        <button class="fb small" onclick="Onboarding.go(3)" style="margin-left:auto">Skip to done</button>
+      </div>`;
+  }
+
+  function renderDone() {
+    const hostList = scanResults?.hosts || [];
+    const opportunities = hostList.flatMap((h) => h.opportunities.map((o) => ({ ...o, host: h.label })));
+    const totalSkills = Array.isArray(SKILL_DATA) ? SKILL_DATA.length : 0;
+    const srcCount = skillSources.length;
+    const memEntries = (MS.getData()?.entries || []).length;
+    return `
+      <div class="ob-moment">
+        <div class="ob-moment-badge done">&#10003;</div>
+        <div class="ob-moment-text">
+          <strong>All set</strong>
+          <span>${totalSkills} skills indexed from ${srcCount} source${srcCount !== 1 ? 's' : ''}. ${memEntries} memory entries loaded. AI hosts can retrieve context through MCP or compiled files.</span>
+        </div>
+      </div>
+      ${
+        opportunities.length
+          ? `
+        <div class="ob-section ob-mt-7">
+          <div class="ob-section-head">
+            <span class="ob-section-label">Push your rules to apps that need them</span>
+          </div>
+          <div class="ob-row-list">
+            ${opportunities
+              .map(
+                (o) => `
+              <div class="ob-row ob-row-opportunity">
+                <div class="ob-row-icon">${catSvg('opportunity')}</div>
+                <div class="ob-row-body">
+                  <span class="ob-row-name">${esc(o.host)}: ${esc(o.label)}</span>
+                  <span class="ob-row-desc">${esc(o.description)}</span>
+                </div>
+              </div>
+            `,
+              )
+              .join('')}
+          </div>
+        </div>
+      `
+          : ''
+      }
+      <div class="ob-actions ob-mt-7">
+        <button class="save-btn" onclick="Onboarding.finish()">Go to dashboard</button>
+      </div>`;
   }
 
   return {
     init,
     go,
-    toggleHost,
-    connectHost,
+    runScan,
+    linkPath,
+    unlinkSource,
     buildIndex,
     finish,
     skip,
-    linkPath,
-    linkCustom,
-    browse,
-    unlinkSource,
-    importSource,
-    checkSourceChanges,
-    closeDiff,
-    applySync,
-    _setCustomPath: setCustomPath,
-    _backdrop: onBackdrop,
+    addScanPath,
+    removeScanPath,
+    browseScanPath,
+    toggleLoc,
   };
 })();

@@ -592,11 +592,50 @@ ${JSON.stringify(skills).slice(0, 50000)}`,
   }
 }
 
+function listSkillNames(dir) {
+  const names = [];
+  const walk = (d, cat) => {
+    let items;
+    try {
+      items = fs.readdirSync(d).sort((a, b) => a.localeCompare(b));
+    } catch {
+      return;
+    }
+    for (const item of items) {
+      const full = path.join(d, item);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
+      const skillFile = path.join(full, 'SKILL.md');
+      if (fs.existsSync(skillFile)) {
+        let name = item;
+        try {
+          const content = fs.readFileSync(skillFile, 'utf8');
+          const fm = parseSkillFrontmatter(content);
+          if (fm.name) name = fm.name;
+        } catch {
+          /* use dirname */
+        }
+        names.push({ bareId: item, name, cat: cat || 'Uncategorized' });
+      } else {
+        walk(full, cat ? `${cat}/${item}` : item);
+      }
+    }
+  };
+  walk(dir);
+  return names;
+}
+
 module.exports = {
   scanSkills,
   invalidateSkillCache,
   skillHealthCheck,
   countSkillFiles,
+  listSkillNames,
   llmParseSkill,
   parseAllNeedingParse,
   llmReviewSimilarSkills,
