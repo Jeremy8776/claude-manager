@@ -2,11 +2,12 @@ const assert = require('assert');
 const http = require('http');
 
 const { cors, body, json } = require('../server/lib/http');
+const { PORT } = require('../server/lib/config');
 
 // ---- cors ----
 // GIVEN a request from the allowed localhost origin
 const allowedReq = new http.IncomingMessage(new (require('net').Socket)());
-allowedReq.headers = { origin: 'http://localhost:3847' };
+allowedReq.headers = { origin: `http://localhost:${PORT}` };
 const allowedRes = new http.ServerResponse(allowedReq);
 allowedRes.setHeader = (name, value) => {
   allowedRes._headers = allowedRes._headers || {};
@@ -15,7 +16,7 @@ allowedRes.setHeader = (name, value) => {
 cors(allowedReq, allowedRes);
 assert.strictEqual(
   allowedRes._headers['Access-Control-Allow-Origin'],
-  'http://localhost:3847',
+  `http://localhost:${PORT}`,
   'cors sets origin header for localhost',
 );
 assert.strictEqual(
@@ -31,7 +32,7 @@ assert.strictEqual(
 
 // GIVEN a request from 127.0.0.1 origin
 const loopbackReq = new http.IncomingMessage(new (require('net').Socket)());
-loopbackReq.headers = { origin: 'http://127.0.0.1:3847' };
+loopbackReq.headers = { origin: `http://127.0.0.1:${PORT}` };
 const loopbackRes = new http.ServerResponse(loopbackReq);
 loopbackRes.setHeader = (name, value) => {
   loopbackRes._headers = loopbackRes._headers || {};
@@ -40,7 +41,7 @@ loopbackRes.setHeader = (name, value) => {
 cors(loopbackReq, loopbackRes);
 assert.strictEqual(
   loopbackRes._headers['Access-Control-Allow-Origin'],
-  'http://127.0.0.1:3847',
+  `http://127.0.0.1:${PORT}`,
   'cors sets origin for 127.0.0.1',
 );
 
