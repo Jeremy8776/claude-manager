@@ -113,4 +113,4 @@ async function probeAIExtensions() {
   return perIde;
 }
 
-module.exports = { probeIDEs, probeAIExtensions };
+module.exports = { probeIDEs, probeAIExtensions, isDir };

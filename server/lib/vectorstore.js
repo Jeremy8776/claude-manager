@@ -225,14 +225,15 @@ function bareSkillId(skillId) {
 }
 
 /**
- * Strip common suffixes for loose matching, but never shrink below 3 chars
- * to avoid false matches (e.g. "string" → "str", "processed" → "process").
+ * Strip common suffixes for loose matching, but preserve enough characters
+ * to avoid false matches (e.g. "string" → "str", "rules" → "rul").
+ * Minimum remaining length of 4 ensures stems like "make" stay intact.
  * @param {string} word
  */
 function stripSuffix(word) {
   let stem = word;
   for (const suffix of ['ing', 'ed', 'es', 's']) {
-    if (stem.endsWith(suffix) && stem.length - suffix.length >= 3) {
+    if (stem.endsWith(suffix) && stem.length - suffix.length >= 4) {
       stem = stem.slice(0, -suffix.length);
       break;
     }

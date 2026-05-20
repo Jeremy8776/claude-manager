@@ -5,6 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 const { HOMEDIR, DATA_DIR, SKILLS_DIR } = require('./config');
+// TODO: countSkillFiles and listSkillNames are synchronous and block the event loop.
+// Converting them to async (fs.promises) would require changes across skills.js and
+// all callers. Until then, calls here are the main latency source in scanSystem.
 const { countSkillFiles, listSkillNames } = require('./skills');
 const {
   HOSTS,
@@ -13,7 +16,7 @@ const {
   CONFIG_FILE_NAMES,
   OPPORTUNITY_FILES,
 } = require('./system-scan-definitions');
-const { probeIDEs, probeAIExtensions } = require('./system-scan-ides');
+const { probeIDEs, probeAIExtensions, isDir } = require('./system-scan-ides');
 
 // ---- Helpers ----
 
@@ -40,14 +43,6 @@ async function getDriveRoots() {
 async function isFile(p) {
   try {
     return (await fs.promises.stat(p)).isFile();
-  } catch {
-    return false;
-  }
-}
-/** @param {string} p */
-async function isDir(p) {
-  try {
-    return (await fs.promises.stat(p)).isDirectory();
   } catch {
     return false;
   }
@@ -307,7 +302,7 @@ async function probeHostDir(hostDef, homedir) {
 
   // Opportunities (missing global config)
   const expected = OPPORTUNITY_FILES[/** @type {keyof typeof OPPORTUNITY_FILES} */ (hostDef.id)];
-  if (expected) {
+  if (expected != null) {
     const filePath = path.join(hostPath, expected);
     const homedirFile = path.join(homedir, expected);
     // If config doesn't exist inside host dir or at homedir root
@@ -324,7 +319,7 @@ async function probeHostDir(hostDef, homedir) {
 }
 
 /** @param {Array<{id: string, label: string, path: string, exe: string}>} ideList */
-async function probeIdegGroup(ideList) {
+async function probeIdeGroup(ideList) {
   if (!ideList.length) return null;
   const perIde = await probeAIExtensions();
   return {
@@ -362,8 +357,8 @@ async function scanSystem(customPaths = [], opts = {}) {
   }
 
   // Probe host dirs from drives
+  const drives = !skipDrives ? await getDriveRoots() : [];
   if (!skipDrives) {
-    const drives = await getDriveRoots();
     const driveResults = await Promise.all(
       drives.flatMap((drive) =>
         HOSTS.map(async (h) => {
@@ -445,7 +440,6 @@ async function scanSystem(customPaths = [], opts = {}) {
     await scanStandaloneFiles(HOMEDIR, hosts);
   }
   if (!skipDrives) {
-    const drives = await getDriveRoots();
     await Promise.all(drives.map((d) => scanStandaloneFiles(d, hosts)));
   }
   await Promise.all(workspaces.map((/** @type {string} */ ws) => scanStandaloneFiles(ws, hosts)));
@@ -462,7 +456,7 @@ async function scanSystem(customPaths = [], opts = {}) {
   );
 
   // IDE group
-  const ides = await probeIdegGroup(ideList);
+  const ides = await probeIdeGroup(ideList);
 
   return {
     hosts: populated,
