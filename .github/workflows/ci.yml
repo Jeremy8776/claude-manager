@@ -63,3 +63,9 @@ jobs:
           npm run smoke
           npm run test:handoffs
           npm run test:projects
+          npm run test:compiler
+          npm run test:skills
+          npm run test:rule-files
+          npm run test:config
+          npm run test:http
+          npm run test:api-endpoints

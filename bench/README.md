@@ -1,4 +1,13 @@
-# Tokenomics benchmark
+# Bench
+
+Benchmarking and measurement tools for Context Engine.
+
+| File            | Purpose                                |
+| --------------- | -------------------------------------- |
+| `tokenomics.py` | Token-efficiency benchmark (see below) |
+| `tasks.json`    | Task corpus used by the benchmark      |
+
+## Tokenomics benchmark
 
 One Python script. Run it; it prints a table. That's the whole tool.
 

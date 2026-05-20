@@ -178,7 +178,7 @@ ${flattenSection(ctx.rules.soul, ['soft'])}`);
       for (const [skillId, mrc] of Object.entries(ctx.mrContext)) {
         if (!selectedIds.has(skillId)) continue;
         if (!mrc.chunks.length) continue;
-        const chunkParts = mrc.chunks.slice(0, 3).map((chunk, i) => `### ${chunk.section}\n${chunk.text}`);
+        const chunkParts = mrc.chunks.slice(0, 3).map((chunk) => `### ${chunk.section}\n${chunk.text}`);
         sections.push(`## ${skillId} — Relevant knowledge\n${chunkParts.join('\n\n')}`);
       }
     }
@@ -429,7 +429,6 @@ function buildContext(opts) {
     : allSkills.filter((s) => stateMap[s.id] !== false);
 
   // Read skill file content and compute relative paths for output formats
-  const skillsDir = opts.skillsDir || path.join(dataDir, '..', 'skills');
   const rootDir = opts.skillsDir ? path.dirname(opts.skillsDir) : path.join(dataDir, '..');
   activeSkills.forEach((s) => {
     try {
@@ -440,10 +439,13 @@ function buildContext(opts) {
     s.relativePath = path.relative(rootDir, s.path).replace(/\\/g, '/');
   });
 
+  const normalizedRules = rules ? normalizeRules(rules) : null;
+  const finalRules = opts.rulesOverride ? normalizeRules(opts.rulesOverride) : normalizedRules;
+
   return {
     memory,
-    rules: rules ? normalizeRules(rules) : null,
-    sessionStart: rules?.sessionStart || '',
+    rules: finalRules,
+    sessionStart: (opts.rulesOverride && opts.rulesOverride.sessionStart) || rules?.sessionStart || '',
     activeSkills,
     totalSkills: allSkills.length,
     mrContext: opts.mrContext || null,
@@ -461,28 +463,28 @@ function buildContext(opts) {
  * @returns {object}
  */
 function normalizeRules(rules) {
-  const codingPriorities = ['hard', 'soft'];
-  const generalPriorities = ['hard', 'soft'];
-  const soulPriorities = ['soft'];
+  const codingPriorities = ['hard', 'soft', 'style'];
+  const generalPriorities = ['hard', 'soft', 'style'];
+  const soulPriorities = ['soft', 'style'];
 
   const coding =
     typeof rules.coding === 'string'
-      ? { soft: rules.coding }
+      ? { ...Object.fromEntries(codingPriorities.map((p) => [p, ''])), soft: rules.coding }
       : typeof rules.coding === 'object' && rules.coding !== null
         ? pickPriorities(rules.coding, codingPriorities)
-        : {};
+        : Object.fromEntries(codingPriorities.map((p) => [p, '']));
   const general =
     typeof rules.general === 'string'
-      ? { soft: rules.general }
+      ? { ...Object.fromEntries(generalPriorities.map((p) => [p, ''])), soft: rules.general }
       : typeof rules.general === 'object' && rules.general !== null
         ? pickPriorities(rules.general, generalPriorities)
-        : {};
+        : Object.fromEntries(generalPriorities.map((p) => [p, '']));
   const soul =
     typeof rules.soul === 'string'
-      ? { soft: rules.soul }
+      ? { ...Object.fromEntries(soulPriorities.map((p) => [p, ''])), soft: rules.soul }
       : typeof rules.soul === 'object' && rules.soul !== null
         ? pickPriorities(rules.soul, soulPriorities)
-        : {};
+        : Object.fromEntries(soulPriorities.map((p) => [p, '']));
 
   return { coding, general, soul };
 }
@@ -537,7 +539,7 @@ function flattenSectionLabeled(section, sectionLabel, priorities) {
 function pickPriorities(obj, allowed) {
   const out = {};
   for (const key of allowed) {
-    if (typeof obj[key] === 'string') out[key] = obj[key];
+    out[key] = typeof obj[key] === 'string' ? obj[key] : '';
   }
   return out;
 }
@@ -594,13 +596,12 @@ function compile(opts) {
  */
 function estimateTokens(text) {
   if (!text) return 0;
-  const words = text.split(/\s+/).filter(Boolean).length;
   const codeBlocks = (text.match(/```[\s\S]*?```/g) || []).join('').length;
   const proseChars = text.length - codeBlocks;
   // Prose: ~1.3 tokens/word, Code: ~1.5 tokens/word (higher token density)
   const proseWords = Math.round(proseChars / 5); // avg word length
   const codeWords = Math.round(codeBlocks / 4);
-  const mdMarkers = (text.match(/[#|*\->`\[\](){}]/g) || []).length;
+  const mdMarkers = (text.match(/[#|*\->`\[\](){}]/g) || []).length; // eslint-disable-line no-useless-escape
   return Math.round(proseWords * 1.3 + codeWords * 1.5 + mdMarkers * 0.5);
 }
 

@@ -10,6 +10,7 @@ const { handleRequest } = require('./router');
 const { regenerateCONTEXTmd } = require('./lib/modes');
 const { isLocalRequest, SECURITY_HEADERS } = require('./lib/security');
 const { getAuthToken } = require('./lib/crypto');
+const { ensureDefaultData } = require('./lib/backup');
 
 /**
  * @returns {import('http').Server}
@@ -72,6 +73,7 @@ async function handleHttpRequest(req, res) {
 }
 
 function createContextServer() {
+  ensureDefaultData();
   // http.createServer expects a sync (void-returning) listener. Wrap the
   // async handler and explicitly void the returned promise so we can't
   // accidentally drop a rejection — handleHttpRequest catches its own

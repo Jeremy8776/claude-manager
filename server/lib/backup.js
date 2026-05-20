@@ -75,6 +75,24 @@ function appendSession(entry) {
   fs.writeFileSync(SESSION_LOG, JSON.stringify(log, null, 2), 'utf8');
 }
 
+function ensureDefaultData() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const defaults = {
+    'memory.json': { version: '1.1', entries: [] },
+    'projects.json': { version: '1.0', projects: [] },
+    'rules.json': {
+      coding: 'Modular code files.\nComment the why, not the what.',
+      general: 'Memory is a core skill. Think independently.',
+      soul: 'Helpful, concise, and logical.\nObjective and critical thinker.',
+    },
+    'skill-states.json': { version: '1.0', last_updated: new Date().toISOString().split('T')[0], states: {} },
+  };
+  for (const [file, content] of Object.entries(defaults)) {
+    const p = path.join(DATA_DIR, file);
+    if (!fs.existsSync(p)) fs.writeFileSync(p, JSON.stringify(content, null, 2), 'utf8');
+  }
+}
+
 module.exports = {
   readData,
   writeData,
@@ -83,4 +101,5 @@ module.exports = {
   restoreBackup,
   getSessionLog,
   appendSession,
+  ensureDefaultData,
 };
