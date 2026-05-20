@@ -10,6 +10,10 @@ data/onboarding.json
 data/dedup.json
 data/workspaces.json
 data/modes.json
+data/memory.json
+data/projects.json
+data/rules.json
+data/skill-states.json
 *.log
 .DS_Store
 Thumbs.db

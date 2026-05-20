@@ -81,6 +81,10 @@ const ALLOWED_INGEST_HOSTS = new Set(['github.com', 'gitlab.com', 'codeberg.org'
 
 const ingestJobs = {};
 const INGEST_JOB_TTL = 10 * 60 * 1000; // 10 minutes
+const MAX_CONCURRENT_INGEST = 5;
+
+let lastAuthGenerateTime = 0;
+const AUTH_GENERATE_COOLDOWN = 60 * 1000; // 60 seconds
 
 function cleanupIngestJobs() {
   const now = Date.now();
@@ -99,6 +103,9 @@ async function handleRequest(req, res, url) {
     return json(res, { configured: !!token });
   }
   if (p === '/api/auth/generate' && req.method === 'POST') {
+    if (Date.now() - lastAuthGenerateTime < AUTH_GENERATE_COOLDOWN)
+      return json(res, { ok: false, error: 'Please wait before generating a new token' }, 429);
+    lastAuthGenerateTime = Date.now();
     const token = generateApiToken();
     setAuthToken(token);
     return json(res, { ok: true, token });
@@ -125,7 +132,8 @@ async function handleRequest(req, res, url) {
     try {
       body = fs.readFileSync(skill.path, 'utf8');
     } catch (e) {
-      return json(res, { ok: false, error: 'Failed to read SKILL.md: ' + e.message }, 500);
+      console.error('Skill read error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Failed to read skill file' }, 500);
     }
 
     // Build a lightweight section index from `## ` headings so callers can
@@ -181,7 +189,8 @@ async function handleRequest(req, res, url) {
       if (!result.total) return json(res, { ok: true, parsed: 0, message: 'All skills already parsed' });
       return json(res, { ok: true, parsed: result.parsed, total: result.total });
     } catch (e) {
-      return json(res, { ok: false, error: e.message }, 400);
+      console.error('Skill parse error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Skill parse failed' }, 400);
     }
   }
 
@@ -349,7 +358,7 @@ async function handleRequest(req, res, url) {
 
   if (p === '/api/mcp/hosts/install' && req.method === 'POST') {
     const data = await body(req);
-    const hostId = String(data?.hostId || '').trim();
+    const hostId = typeof data?.hostId === 'string' ? data.hostId.trim() : '';
     if (!hostId) return json(res, { ok: false, error: 'hostId is required' }, 400);
     const result = installHostConfig(hostId);
     return json(res, result, result.ok ? 200 : 409);
@@ -396,6 +405,9 @@ async function handleRequest(req, res, url) {
     const jobId = 'ingest_' + Date.now();
     const destDir = path.join(SKILLS_DIR, 'ingested', slug);
     cleanupIngestJobs();
+    const activeIngestCount = Object.values(ingestJobs).filter((j) => j.status === 'running').length;
+    if (activeIngestCount >= MAX_CONCURRENT_INGEST)
+      return json(res, { ok: false, error: 'Too many concurrent ingest jobs. Try again later.' }, 429);
     ingestJobs[jobId] = { status: 'running', log: [], count: 0, createdAt: Date.now() };
     const job = ingestJobs[jobId];
     job.log.push(`Cloning ${repoUrl}...`);
@@ -563,7 +575,8 @@ async function handleRequest(req, res, url) {
           console.error('[router] skill-state rollback CONTEXT.md regen failed:', rollbackMsg);
         }
       }
-      return json(res, { ok: false, error: 'State update failed: ' + e.message }, 500);
+      console.error('State update error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'State update failed' }, 500);
     }
   }
 
@@ -646,6 +659,8 @@ async function handleRequest(req, res, url) {
   }
   if (p === '/api/modes/apply' && req.method === 'POST') {
     const { modeId } = await body(req);
+    if (!modeId || typeof modeId !== 'string')
+      return json(res, { ok: false, error: 'modeId must be a non-empty string' }, 400);
     const result = applyMode(modeId);
     return result
       ? json(res, { ok: true, states: result })
@@ -665,6 +680,8 @@ async function handleRequest(req, res, url) {
     return json(res, { targets: getAvailableTargets() });
   if (p === '/api/compile/preview' && req.method === 'POST') {
     const { targets } = await body(req);
+    if (targets !== undefined && !Array.isArray(targets))
+      return json(res, { ok: false, error: 'targets must be an array' }, 400);
     try {
       const result = compile({
         dataDir: DATA_DIR,
@@ -674,7 +691,8 @@ async function handleRequest(req, res, url) {
       });
       return json(res, result);
     } catch (e) {
-      return json(res, { ok: false, error: e.message }, 500);
+      console.error('Compile preview error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Compile preview failed' }, 500);
     }
   }
   if (p === '/api/compile' && req.method === 'POST') {
@@ -703,7 +721,8 @@ async function handleRequest(req, res, url) {
       appendSession({ type: 'compile', targets: targets || Object.keys(result.results), outputDir });
       return json(res, { ok: true, ...result });
     } catch (e) {
-      return json(res, { ok: false, error: e.message }, 500);
+      console.error('Compile error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Compile failed' }, 500);
     }
   }
 
@@ -736,7 +755,8 @@ async function handleRequest(req, res, url) {
       appendSession({ type: 'global_install', targets, count: Object.keys(result.installed).length });
       return json(res, result);
     } catch (e) {
-      return json(res, { ok: false, error: e.message }, 500);
+      console.error('Global install error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Global install failed' }, 500);
     }
   }
 
@@ -826,7 +846,8 @@ async function handleRequest(req, res, url) {
         results[ws.path] = { targets: Object.keys(r.results), errors: r.errors };
         ws.lastCompiled = new Date().toISOString().split('T')[0];
       } catch (e) {
-        errors.push(`${ws.path}: ${e.message}`);
+        console.error('Workspace compile error:', ws.path, e instanceof Error ? e.message : String(e));
+        errors.push(`${ws.path}: compile failed`);
       }
     }
     fs.writeFileSync(WORKSPACES_FILE, JSON.stringify(data, null, 2), 'utf8');
@@ -840,6 +861,10 @@ async function handleRequest(req, res, url) {
   }
   if (p === '/api/projects' && req.method === 'POST') {
     const input = await body(req);
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      return json(res, { ok: false, error: 'Request body must be a JSON object' }, 400);
+    if (input.path !== undefined && typeof input.path !== 'string')
+      return json(res, { ok: false, error: 'path must be a string' }, 400);
     const result = createProject(input);
     return json(res, result, result.ok ? 200 : 400);
   }
@@ -851,6 +876,11 @@ async function handleRequest(req, res, url) {
       return json(res, { ok: false, error: 'Invalid path encoding' }, 400);
     }
     const patch = await body(req);
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch))
+      return json(res, { ok: false, error: 'Request body must be a JSON object' }, 400);
+    const allowedPatchKeys = ['name', 'path'];
+    const unknown = Object.keys(patch).filter((k) => !allowedPatchKeys.includes(k));
+    if (unknown.length) return json(res, { ok: false, error: `Unknown fields: ${unknown.join(', ')}` }, 400);
     const result = updateProject(slug, patch);
     return json(res, result, result.ok ? 200 : 404);
   }
@@ -892,7 +922,8 @@ async function handleRequest(req, res, url) {
       appendSession({ type: 'project_publish', slug, ruleNames, targets });
       return json(res, { ok: true, ...result });
     } catch (e) {
-      return json(res, { ok: false, error: e.message }, 500);
+      console.error('Project publish error:', e instanceof Error ? e.message : String(e));
+      return json(res, { ok: false, error: 'Project publish failed' }, 500);
     }
   }
 

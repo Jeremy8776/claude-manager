@@ -8,6 +8,8 @@ import tseslint from 'typescript-eslint';
 // files only get the recommended-JS rules.
 const TYPECHECKED_JS = [
   'server/server.js',
+  'server/router.js',
+  'server/compiler.js',
   'server/lib/config.js',
   'server/lib/chunker.js',
   'server/lib/embeddings.js',
@@ -35,8 +37,6 @@ export default [
       '!ui/store.js',
       '!ui/compile.js',
       '!ui/dashboard.js',
-      'server/compiler.js',
-      'server/router.js',
       'server/lib/app-version.js',
       'server/lib/backup.js',
       'server/lib/crypto.js',
